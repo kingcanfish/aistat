@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Status</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="header-row">
+        <span id="agg-dot" class="dot dot--gray"></span>
+        <span id="agg-text" class="agg-text">Loading…</span>
+        <div class="header-actions">
+          <button id="refresh-btn" class="icon-btn" title="Refresh now">⟳</button>
+          <button id="settings-btn" class="icon-btn" title="Settings">⚙</button>
+        </div>
+      </div>
+      <div id="last-updated" class="last-updated"></div>
+    </header>
+
+    <main id="panel-view">
+      <ul id="site-list" class="site-list"></ul>
+    </main>
+
+    <main id="settings-view" class="settings-view hidden">
+      <section class="setting-section">
+        <h3>General</h3>
+        <label class="field">
+          <span>Refresh interval (seconds)</span>
+          <input id="interval-input" type="number" min="30" step="15" />
+        </label>
+        <label class="field field--row">
+          <span>Notifications on status change</span>
+          <input id="notify-input" type="checkbox" />
+        </label>
+      </section>
+
+      <section class="setting-section">
+        <h3>Sites</h3>
+        <ul id="site-config-list" class="site-config-list"></ul>
+        <button id="add-site-btn" class="add-btn">+ Add site</button>
+      </section>
+
+      <footer class="settings-footer">
+        <button id="save-btn" class="primary-btn">Save</button>
+        <button id="cancel-btn" class="ghost-btn">Cancel</button>
+      </footer>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

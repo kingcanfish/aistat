@@ -1,0 +1,278 @@
+:root {
+  --bg: #1e1f24;
+  --bg-elevated: #27282f;
+  --border: #35363e;
+  --text: #e6e6eb;
+  --text-dim: #9a9aa3;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  user-select: none;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Header */
+.header {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agg-text {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.icon-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.last-updated {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Dots */
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.dot--green { background: #2ec27e; }
+.dot--yellow { background: #f0c832; }
+.dot--orange { background: #f58a1f; }
+.dot--red { background: #e03e3e; }
+.dot--blue { background: #3b82f6; }
+.dot--gray { background: #9ca3af; }
+
+/* Site list */
+.site-list {
+  list-style: none;
+  overflow-y: auto;
+  max-height: 430px;
+}
+
+.site-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.site-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.site-row:hover {
+  background: var(--bg-elevated);
+}
+
+.site-name {
+  font-weight: 500;
+  flex: 1;
+}
+
+.site-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.site-detail {
+  padding: 0 14px 12px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.component-row,
+.incident-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.component-name {
+  flex: 1;
+  color: var(--text-dim);
+}
+
+.incident-title {
+  font-weight: 500;
+}
+
+.incident-time {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.incident-update {
+  color: var(--text-dim);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.site-link {
+  color: #7aa2f7;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+/* Settings */
+.settings-view {
+  padding: 14px;
+  overflow-y: auto;
+  max-height: 480px;
+}
+
+.setting-section h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.field--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field input[type="number"] {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 120px;
+}
+
+.site-config-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.site-config-item input,
+.site-config-item select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+}
+.remove-btn:hover {
+  color: #e03e3e;
+}
+
+.add-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 8px;
+  width: 100%;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.add-btn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.settings-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.primary-btn,
+.ghost-btn {
+  border-radius: 6px;
+  padding: 7px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+.primary-btn {
+  background: #3b82f6;
+  color: #fff;
+}
+.primary-btn:hover {
+  background: #2f6fd6;
+}
+.ghost-btn {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+.ghost-btn:hover {
+  color: var(--text);
+}
