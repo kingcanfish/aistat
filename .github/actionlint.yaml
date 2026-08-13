@@ -1,0 +1,7 @@
+# actionlint's built-in runner list predates the Windows on Arm runners, which
+# went GA for public repositories in April 2025 and are free there. Declaring
+# the label here stops it being reported as unknown.
+# https://github.blog/changelog/2025-04-14-windows-arm64-hosted-runners-now-available-in-public-preview/
+self-hosted-runner:
+  labels:
+    - windows-11-arm

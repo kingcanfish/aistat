@@ -60,7 +60,13 @@ PY
 cargo metadata --no-deps --format-version 1 >/dev/null
 
 git add Cargo.toml Cargo.lock
-git commit -m "Release v$VERSION"
+# Re-releasing the version already in Cargo.toml stages nothing, and an empty
+# commit would abort the script before it ever gets to the tag.
+if git diff --cached --quiet; then
+  echo "  Cargo.toml already at $VERSION; tagging the current commit."
+else
+  git commit -m "Release v$VERSION"
+fi
 git tag -a "v$VERSION" -m "AIStat v$VERSION"
 
 echo
