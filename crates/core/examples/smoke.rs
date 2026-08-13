@@ -1,17 +1,17 @@
 //! Live smoke test: fetch all default sites and print normalized status.
 //!
 //! ```sh
-//! cargo run -p aiisdown-core --example smoke
+//! cargo run -p aistat-core --example smoke
 //! ```
 
-use aiisdown_core::{aggregate, config::default_sites, fetch_all};
+use aistat_core::{aggregate, build_client, config::default_sites, fetch_all};
 
 #[tokio::main]
 async fn main() {
     let sites = default_sites();
-    let statuses = fetch_all(&sites).await;
+    let statuses = fetch_all(&build_client(), &sites).await;
 
-    let priority = aiisdown_core::Status::DEFAULT_PRIORITY.to_vec();
+    let priority = aistat_core::Status::DEFAULT_PRIORITY.to_vec();
     let overall = aggregate(statuses.iter().map(|s| s.overall), &priority);
 
     println!("aggregate overall: {} ({})", overall.label(), overall.color());

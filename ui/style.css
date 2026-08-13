@@ -1,10 +1,83 @@
+/* ==========================================================================
+   AIStat — panel chrome
+   Colors, materials and metrics follow the host OS: the window itself is a
+   translucent vibrancy surface (NSVisualEffectView / Mica), so everything in
+   here paints on top of it with translucent fills rather than solid blocks.
+   ========================================================================== */
+
 :root {
-  --bg: #1e1f24;
-  --bg-elevated: #27282f;
-  --border: #35363e;
-  --text: #e6e6eb;
-  --text-dim: #9a9aa3;
-  --radius: 10px;
+  color-scheme: light dark;
+
+  --text: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.56);
+  --text-tertiary: rgba(0, 0, 0, 0.4);
+
+  --fill-hover: rgba(0, 0, 0, 0.055);
+  --fill-active: rgba(0, 0, 0, 0.1);
+  --fill-control: rgba(255, 255, 255, 0.7);
+  --fill-group: rgba(255, 255, 255, 0.45);
+
+  --separator: rgba(0, 0, 0, 0.09);
+  --stroke-control: rgba(0, 0, 0, 0.14);
+  --window-edge: rgba(0, 0, 0, 0.12);
+
+  --accent: AccentColor;
+  --on-accent: AccentColorText;
+  /* The raw system accent is tuned for fills, not body text: macOS blue on
+     white measures 4.02:1, under the 4.5:1 minimum. Darkened here (5.8:1) and
+     lightened in dark mode, so links stay legible while keeping the hue. */
+  --accent-text: color-mix(in srgb, var(--accent) 80%, #000);
+
+  --green: #1a8a52;
+  --yellow: #b07d05;
+  --orange: #cc6510;
+  --red: #c62f2f;
+  --blue: #2563eb;
+  --gray: #86868b;
+
+  --radius-window: 12px;
+  --radius-group: 8px;
+  --radius-control: 6px;
+  --row-height: 30px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: rgba(255, 255, 255, 0.92);
+    --text-secondary: rgba(255, 255, 255, 0.58);
+    --text-tertiary: rgba(255, 255, 255, 0.4);
+
+    --fill-hover: rgba(255, 255, 255, 0.08);
+    --fill-active: rgba(255, 255, 255, 0.14);
+    --fill-control: rgba(255, 255, 255, 0.1);
+    --fill-group: rgba(255, 255, 255, 0.06);
+
+    --separator: rgba(255, 255, 255, 0.1);
+    --stroke-control: rgba(255, 255, 255, 0.16);
+    --window-edge: rgba(255, 255, 255, 0.14);
+
+    --accent-text: color-mix(in srgb, var(--accent) 80%, #fff);
+
+    --green: #2ec27e;
+    --yellow: #e8c14a;
+    --orange: #f58a1f;
+    --red: #ff5f57;
+    --blue: #5ea1ff;
+    --gray: #9ca3af;
+  }
+}
+
+/* WebKitGTK and older webviews don't ship the system accent keywords. */
+@supports not (color: AccentColor) {
+  :root {
+    --accent: #007aff;
+    --on-accent: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #0a84ff;
+    }
+  }
 }
 
 * {
@@ -13,266 +86,787 @@
   padding: 0;
 }
 
+html,
 body {
-  background: var(--bg);
+  height: 100%;
+}
+
+body {
+  /* Transparent so the native window material shows through. */
+  background: transparent;
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
-  user-select: none;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  border-radius: var(--radius-window);
+  /* Hairline that keeps the panel readable against a bright wallpaper. */
+  box-shadow: inset 0 0 0 0.5px var(--window-edge);
+
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 .hidden {
   display: none !important;
 }
 
-/* Header */
-.header {
-  padding: 12px 14px 8px;
-  border-bottom: 1px solid var(--border);
+.sprite {
+  display: none;
 }
 
-.header-row {
+.icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --------------------------------------------------------------------------
+   Title bar
+   -------------------------------------------------------------------------- */
+
+.titlebar {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 11px 10px 11px 14px;
+  border-bottom: 0.5px solid var(--separator);
+  flex: none;
 }
 
-.agg-text {
-  font-weight: 600;
-  font-size: 14px;
+.titlebar-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
   flex: 1;
 }
 
-.header-actions {
+.titlebar-text {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.titlebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.titlebar-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.titlebar-subtitle:empty {
+  display: none;
+}
+
+/* The settings view owns the whole panel, so the title bar names it instead
+   of reporting service status. */
+body.is-settings #agg-dot,
+body.is-settings #last-updated,
+body.is-settings #refresh-btn {
+  display: none;
+}
+
+.titlebar-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
 }
 
 .icon-btn {
-  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   border: none;
-  color: var(--text-dim);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease;
 }
 .icon-btn:hover {
-  background: var(--bg-elevated);
+  background: var(--fill-hover);
   color: var(--text);
 }
-
-.last-updated {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-dim);
+.icon-btn:active {
+  background: var(--fill-active);
+}
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
-/* Dots */
+.icon-btn.is-busy .icon {
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Views
+   -------------------------------------------------------------------------- */
+
+.view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The scroll container is a plain block so its child's natural height can be
+   measured; the window then resizes itself to match. Scrollbars are left
+   entirely to the OS: styling them with ::-webkit-scrollbar would replace the
+   macOS overlay scrollbar with a classic one that takes layout width, which is
+   what made content jump sideways when a list grew tall enough to scroll. */
+.scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  flex: 1;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Status dots
+   -------------------------------------------------------------------------- */
+
 .dot {
-  width: 12px;
-  height: 12px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+  flex: none;
+  background: var(--gray);
+  /* Soft halo, the way native indicator lights read. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gray) 18%, transparent);
 }
-.dot--green { background: #2ec27e; }
-.dot--yellow { background: #f0c832; }
-.dot--orange { background: #f58a1f; }
-.dot--red { background: #e03e3e; }
-.dot--blue { background: #3b82f6; }
-.dot--gray { background: #9ca3af; }
+.dot--operational {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent);
+}
+.dot--degraded {
+  background: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 18%, transparent);
+}
+.dot--partial_outage {
+  background: var(--orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 18%, transparent);
+}
+.dot--full_outage {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
+}
+.dot--maintenance {
+  background: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+.dot--unknown {
+  background: var(--gray);
+}
 
-/* Site list */
+.dot--sm {
+  width: 6px;
+  height: 6px;
+  box-shadow: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Site list
+   -------------------------------------------------------------------------- */
+
 .site-list {
   list-style: none;
-  overflow-y: auto;
-  max-height: 430px;
+  padding: 4px 6px 8px;
 }
 
-.site-item {
-  border-bottom: 1px solid var(--border);
+.site-item + .site-item {
+  border-top: 0.5px solid var(--separator);
 }
 
 .site-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  cursor: pointer;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-control);
+  transition: background 100ms ease;
+}
+
+/* Each site's own mark, with a lettered chip standing in until (or unless)
+   the real icon loads. */
+.site-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* The real icon is stacked on top of the monogram and fades in once it loads,
+   rather than being display:none until then — a hidden image never loads. */
+.site-icon-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.site-icon.has-img .site-icon-img {
+  opacity: 1;
+}
+.site-icon.has-img .site-icon-mono {
+  opacity: 0;
+}
+
+.site-icon-mono {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #fff;
+  background: hsl(var(--mono-hue, 220) 52% 48%);
 }
 .site-row:hover {
-  background: var(--bg-elevated);
+  background: var(--fill-hover);
+}
+.site-row:active {
+  background: var(--fill-active);
 }
 
 .site-name {
-  font-weight: 500;
   flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .site-status {
   font-size: 12px;
-  color: var(--text-dim);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Count of open incidents (or, failing that, affected components). */
+.site-chip {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  color: var(--gray);
+  background: color-mix(in srgb, var(--gray) 18%, transparent);
+}
+.site-chip--degraded {
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 20%, transparent);
+}
+.site-chip--partial_outage {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 20%, transparent);
+}
+.site-chip--full_outage {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 20%, transparent);
+}
+.site-chip--maintenance {
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 20%, transparent);
+}
+
+.no-incident {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.site-chevron {
+  color: var(--text-tertiary);
+  transition: transform 160ms ease;
+}
+.site-item.is-open .site-chevron {
+  transform: rotate(90deg);
+}
+
+/* Collapsible body: 0fr → 1fr animates to the content's natural height. */
+.site-detail-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms ease;
+}
+.site-item.is-open .site-detail-wrap {
+  grid-template-rows: 1fr;
 }
 
 .site-detail {
-  padding: 0 14px 12px 34px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.site-detail-inner {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  padding: 2px 8px 12px 25px;
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin-top: 3px;
 }
 
-.component-row,
-.incident-row {
+.component-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
 }
 
 .component-name {
   flex: 1;
-  color: var(--text-dim);
+  min-width: 0;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.incident {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  border-radius: var(--radius-control);
+  background: var(--fill-group);
+}
+
+.incident-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .incident-title {
-  font-weight: 500;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.incident-time::first-letter {
+  text-transform: uppercase;
 }
 
 .incident-time {
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--text-tertiary);
 }
 
 .incident-update {
-  color: var(--text-dim);
-  line-height: 1.4;
+  color: var(--text-secondary);
+  line-height: 1.45;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.site-error {
+  color: var(--red);
+  overflow-wrap: anywhere;
 }
 
 .site-link {
-  color: #7aa2f7;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 3px 7px 3px 6px;
+  margin-left: -6px;
+  border-radius: var(--radius-control);
+  color: var(--accent-text);
   font-size: 12px;
-  cursor: pointer;
-  text-decoration: none;
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+.site-link:hover {
+  background: var(--fill-hover);
+}
+.site-link .icon {
+  width: 12px;
+  height: 12px;
 }
 
-/* Settings */
-.settings-view {
-  padding: 14px;
-  overflow-y: auto;
-  max-height: 480px;
+.empty-state {
+  padding: 26px 16px;
+  text-align: center;
+  color: var(--text-tertiary);
 }
 
-.setting-section h3 {
-  font-size: 12px;
+/* --------------------------------------------------------------------------
+   Settings
+   -------------------------------------------------------------------------- */
+
+.settings-inner {
+  padding: 12px 14px 14px;
+}
+
+.group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  margin-bottom: 8px;
+  letter-spacing: 0.05em;
+  margin: 4px 0 6px 2px;
+}
+.group-label + .group {
+  margin-bottom: 14px;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+.group {
+  background: var(--fill-group);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-group);
+  padding: 2px 10px;
 }
-.field--row {
-  flex-direction: row;
+
+.form-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+.form-row + .form-row {
+  border-top: 0.5px solid var(--separator);
 }
 
-.field input[type="number"] {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+.form-row label {
   color: var(--text);
-  border-radius: 6px;
-  padding: 6px 8px;
-  width: 120px;
 }
 
+/* Text-ish controls */
+input[type="number"],
+input[type="text"],
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--fill-control);
+  border: 0.5px solid var(--stroke-control);
+  border-radius: var(--radius-control);
+  padding: 4px 7px;
+  min-width: 0;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stepper input {
+  width: 68px;
+  text-align: right;
+}
+.stepper-unit {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* macOS-style switch, tinted with the system accent color */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.switch-track {
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--fill-active);
+  box-shadow: inset 0 0 0 0.5px var(--stroke-control);
+  transition: background 160ms ease;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+}
+.switch-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.switch input:checked + .switch-track {
+  background: var(--accent);
+  box-shadow: none;
+}
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(16px);
+}
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Site rows */
+.site-config-list {
+  list-style: none;
+}
+
+/* Two lines per site: the URL needs the full width to stay readable. The
+   adapter isn't editable — it's detected from the URL and shown as a badge. */
 .site-config-item {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 6px;
-  margin-bottom: 6px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "name badge remove"
+    "url  url   url";
+  gap: 5px 6px;
   align-items: center;
+  padding: 8px 0;
+}
+.site-config-item + .site-config-item {
+  border-top: 0.5px solid var(--separator);
+}
+.site-config-item input {
+  width: 100%;
+  font-size: 12px;
+}
+.f-name {
+  grid-area: name;
+}
+.f-url {
+  grid-area: url;
+}
+.site-config-item .remove-btn {
+  grid-area: remove;
 }
 
-.site-config-item input,
+.adapter-badge {
+  grid-area: badge;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: var(--fill-hover);
+  border-radius: 4px;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+.adapter-badge:empty {
+  display: none;
+}
 .site-config-item select {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 6px 8px;
-  width: 100%;
+  /* Keep the native popup affordance rather than faking a caret. */
+  appearance: auto;
+  padding: 3px 4px;
 }
 
 .remove-btn {
-  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 14px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: default;
 }
 .remove-btn:hover {
-  color: #e03e3e;
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--red);
 }
 
-.add-btn {
+.row-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: calc(100% + 20px);
+  margin: 0 -10px;
+  padding: 8px 10px;
+  border: none;
+  border-top: 0.5px solid var(--separator);
+  border-radius: 0 0 var(--radius-group) var(--radius-group);
   background: transparent;
-  border: 1px dashed var(--border);
-  color: var(--text-dim);
-  border-radius: 6px;
-  padding: 8px;
-  width: 100%;
-  cursor: pointer;
-  margin-top: 4px;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
 }
-.add-btn:hover {
-  color: var(--text);
-  border-color: var(--text-dim);
+.site-config-list:empty + .row-btn {
+  border-top: none;
+}
+.row-btn:hover {
+  background: var(--fill-hover);
 }
 
+/* Footer buttons */
 .settings-footer {
   display: flex;
-  gap: 8px;
   justify-content: flex-end;
-  margin-top: 16px;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--separator);
+  flex: none;
 }
 
-.primary-btn,
-.ghost-btn {
-  border-radius: 6px;
-  padding: 7px 14px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  font-size: 13px;
-}
-.primary-btn {
-  background: #3b82f6;
-  color: #fff;
-}
-.primary-btn:hover {
-  background: #2f6fd6;
-}
-.ghost-btn {
-  background: transparent;
-  color: var(--text-dim);
-  border-color: var(--border);
-}
-.ghost-btn:hover {
+.btn {
+  font: inherit;
+  padding: 5px 14px;
+  border-radius: var(--radius-control);
+  border: 0.5px solid var(--stroke-control);
+  background: var(--fill-control);
   color: var(--text);
+  cursor: default;
+  transition: filter 120ms ease;
+}
+.btn:hover {
+  filter: brightness(1.06);
+}
+.btn:active {
+  filter: brightness(0.94);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------------------
+   Alert sheet
+   -------------------------------------------------------------------------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(1px);
+}
+
+.dialog {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 14px;
+  border-radius: 10px;
+  text-align: center;
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 0 0 0.5px var(--window-edge);
+}
+
+.dialog-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dialog-body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.dialog-ok {
+  margin-top: 4px;
+  min-width: 90px;
+}
+
+/* Inline validation while a site's adapter is being probed. */
+.site-config-item.is-checking {
+  opacity: 0.55;
+}
+.site-config-item.is-invalid .f-url {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 24%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

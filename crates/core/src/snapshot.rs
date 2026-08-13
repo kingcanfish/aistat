@@ -80,6 +80,7 @@ mod tests {
                 .collect(),
             fetched_at: None,
             error: None,
+            icon: None,
         }
     }
 

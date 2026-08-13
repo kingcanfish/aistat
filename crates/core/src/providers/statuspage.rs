@@ -1,9 +1,19 @@
 use serde::Deserialize;
 
-use super::ProviderError;
+use super::{fetch_json, ProviderError};
 use crate::config::SiteConfig;
 use crate::model::{Component, Incident, SiteStatus, Status};
-use crate::normalize::{statuspage_component_status, statuspage_indicator_to_status};
+use crate::normalize::{
+    statuspage_component_status, statuspage_incident_impact, statuspage_indicator_to_status,
+    statuspage_maintenance_is_active,
+};
+
+/// Atlassian Statuspage public API v2. Schema and field values are documented
+/// at `<page>/api`, e.g. <https://metastatuspage.com/api>.
+///
+/// `summary.json` returns the page indicator, every component, all *unresolved*
+/// incidents, and upcoming plus in-progress maintenances in one request.
+pub const SUMMARY_PATH: &str = "/api/v2/summary.json";
 
 #[derive(Deserialize)]
 struct Summary {
@@ -61,28 +71,16 @@ struct MaintenanceRaw {
 
 /// Fetches a StatusPage-compatible status page (Atlassian StatusPage and
 /// incident.io both expose this JSON schema) using a single `summary.json` call.
-pub async fn fetch(client: &reqwest::Client, site: &SiteConfig) -> Result<SiteStatus, ProviderError> {
-    let url = format!("{}/api/v2/summary.json", site.url.trim_end_matches('/'));
-    let summary: Summary = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await
-        .map_err(|e| ProviderError::Parse(e.to_string()))?;
+pub async fn fetch(
+    client: &reqwest::Client,
+    site: &SiteConfig,
+) -> Result<SiteStatus, ProviderError> {
+    let url = format!("{}{SUMMARY_PATH}", site.url.trim_end_matches('/'));
+    Ok(to_status(site, fetch_json(client, &url).await?))
+}
 
-    let mut overall = statuspage_indicator_to_status(&summary.status.indicator);
-
-    let maintenance_active = summary
-        .scheduled_maintenances
-        .iter()
-        .any(|m| matches!(m.status.as_str(), "in_progress" | "verifying"));
-    if maintenance_active {
-        overall = Status::Maintenance;
-    }
-
-    let components = summary
+fn to_status(site: &SiteConfig, summary: Summary) -> SiteStatus {
+    let components: Vec<Component> = summary
         .components
         .iter()
         .filter(|c| !c.group)
@@ -93,6 +91,22 @@ pub async fn fetch(client: &reqwest::Client, site: &SiteConfig) -> Result<SiteSt
             })
         })
         .collect();
+
+    // The page-level indicator is maintained by hand and routinely lags the
+    // component table — Anthropic's page reads "minor" while four components
+    // report a partial outage. Take the worst of every signal so the tray
+    // never under-reports.
+    let maintenance_active = summary
+        .scheduled_maintenances
+        .iter()
+        .any(|m| statuspage_maintenance_is_active(&m.status));
+
+    let overall = crate::aggregate(
+        std::iter::once(statuspage_indicator_to_status(&summary.status.indicator))
+            .chain(components.iter().map(|c| c.status))
+            .chain(maintenance_active.then_some(Status::Maintenance)),
+        &Status::DEFAULT_PRIORITY,
+    );
 
     let incidents = summary
         .incidents
@@ -106,7 +120,7 @@ pub async fn fetch(client: &reqwest::Client, site: &SiteConfig) -> Result<SiteSt
             Incident {
                 id: i.id.clone(),
                 title: i.name.clone(),
-                impact: statuspage_indicator_to_status(&i.impact),
+                impact: statuspage_incident_impact(&i.impact),
                 lifecycle: i.status.clone(),
                 latest_update,
                 updated_at: i.updated_at.clone(),
@@ -115,7 +129,7 @@ pub async fn fetch(client: &reqwest::Client, site: &SiteConfig) -> Result<SiteSt
         })
         .collect();
 
-    Ok(SiteStatus {
+    SiteStatus {
         id: site.id.clone(),
         name: site.name.clone(),
         url: site.url.clone(),
@@ -125,7 +139,8 @@ pub async fn fetch(client: &reqwest::Client, site: &SiteConfig) -> Result<SiteSt
         incidents,
         fetched_at: Some(chrono::Utc::now().to_rfc3339()),
         error: None,
-    })
+        icon: None,
+    }
 }
 
 #[cfg(test)]
@@ -149,6 +164,80 @@ mod tests {
         let overall = statuspage_indicator_to_status(&summary.status.indicator);
         assert_eq!(overall, Status::Operational);
         assert_eq!(summary.components.len(), 2);
+    }
+
+    fn site() -> SiteConfig {
+        SiteConfig {
+            id: "claude".into(),
+            name: "Claude".into(),
+            url: "https://status.claude.com".into(),
+            adapter: AdapterKind::Statuspage,
+        }
+    }
+
+    /// status.claude.com reported indicator "minor" while four components were
+    /// in partial outage. The panel must show the worse of the two.
+    #[test]
+    fn overall_escalates_to_the_worst_component() {
+        let json = r#"{
+            "status": {"indicator": "minor"},
+            "components": [
+                {"id":"1","name":"Console","status":"operational"},
+                {"id":"2","name":"claude.ai","status":"partial_outage"},
+                {"id":"3","name":"Claude Code","status":"partial_outage"}
+            ],
+            "incidents": [],
+            "scheduled_maintenances": []
+        }"#;
+        let s = to_status(&site(), serde_json::from_str(json).unwrap());
+        assert_eq!(s.overall, Status::PartialOutage);
+    }
+
+    #[test]
+    fn component_groups_do_not_drive_the_overall_status() {
+        let json = r#"{
+            "status": {"indicator": "none"},
+            "components": [
+                {"id":"1","name":"A group","status":"major_outage","group":true},
+                {"id":"2","name":"Real","status":"operational"}
+            ]
+        }"#;
+        let s = to_status(&site(), serde_json::from_str(json).unwrap());
+        assert_eq!(s.overall, Status::Operational);
+        assert_eq!(s.components.len(), 1);
+    }
+
+    #[test]
+    fn maintenance_does_not_downgrade_a_worse_signal() {
+        let json = r#"{
+            "status": {"indicator": "critical"},
+            "components": [],
+            "scheduled_maintenances": [{"status": "in_progress"}]
+        }"#;
+        let s = to_status(&site(), serde_json::from_str(json).unwrap());
+        assert_eq!(s.overall, Status::FullOutage);
+    }
+
+    /// An open incident with impact "none" is unclassified, not resolved.
+    #[test]
+    fn unclassified_open_incidents_are_not_green() {
+        let json = r#"{
+            "status": {"indicator": "minor"},
+            "incidents": [
+                {"id":"a","name":"RBAC roles failing","status":"identified","impact":"none"},
+                {"id":"b","name":"Elevated errors","status":"identified","impact":"minor"}
+            ]
+        }"#;
+        let s = to_status(&site(), serde_json::from_str(json).unwrap());
+        assert_eq!(s.incidents[0].impact, Status::Unknown);
+        assert_eq!(s.incidents[1].impact, Status::Degraded);
+    }
+
+    #[test]
+    fn page_level_none_still_means_operational() {
+        assert_eq!(statuspage_indicator_to_status("none"), Status::Operational);
+        assert_eq!(statuspage_incident_impact("none"), Status::Unknown);
+        assert_eq!(statuspage_incident_impact("critical"), Status::FullOutage);
     }
 
     #[test]

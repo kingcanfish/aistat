@@ -18,10 +18,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aiisdown"
+name = "aistat"
 version = "0.1.0"
 dependencies = [
- "aiisdown-core",
+ "aistat-core",
+ "futures",
  "notify-rust",
  "open",
  "serde",
@@ -32,7 +33,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aiisdown-core"
+name = "aistat-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -4014,6 +4015,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

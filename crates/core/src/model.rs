@@ -90,4 +90,8 @@ pub struct SiteStatus {
     pub incidents: Vec<Incident>,
     pub fetched_at: Option<String>,
     pub error: Option<String>,
+    /// Absolute URL of the page's own icon, resolved separately from the status
+    /// API and filled in by the caller. `None` means "fall back to a monogram".
+    #[serde(default)]
+    pub icon: Option<String>,
 }

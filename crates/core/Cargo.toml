@@ -1,9 +1,9 @@
 [package]
-name = "aiisdown-core"
+name = "aistat-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core logic for aiisdown: status providers, normalization, config and snapshot diffing"
+description = "Core logic for aistat: status providers, normalization, config and snapshot diffing"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -12,6 +12,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "def
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 futures = "0.3"
+# `process` powers the system-curl fallback in providers::fetch_json.
+tokio = { version = "1", features = ["process"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

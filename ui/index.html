@@ -3,50 +3,108 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Status</title>
+    <title>AIStat</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header class="header">
-      <div class="header-row">
-        <span id="agg-dot" class="dot dot--gray"></span>
-        <span id="agg-text" class="agg-text">Loading…</span>
-        <div class="header-actions">
-          <button id="refresh-btn" class="icon-btn" title="Refresh now">⟳</button>
-          <button id="settings-btn" class="icon-btn" title="Settings">⚙</button>
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="i-refresh" viewBox="0 0 16 16">
+        <path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" />
+        <path d="M13.6 2.4v3.2h-3.2" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="2.1" />
+        <path
+          d="M8 1.6h0a1 1 0 0 1 1 1v.36a1 1 0 0 0 .6.92l.05.02a1 1 0 0 0 1.1-.2l.25-.26a1 1 0 0 1 1.42 0l.14.14a1 1 0 0 1 0 1.42l-.26.25a1 1 0 0 0-.2 1.1v.05a1 1 0 0 0 .92.6h.38a1 1 0 0 1 1 1v.2a1 1 0 0 1-1 1h-.38a1 1 0 0 0-.92.6 1 1 0 0 0 .2 1.15l.26.25a1 1 0 0 1 0 1.42l-.14.14a1 1 0 0 1-1.42 0l-.25-.26a1 1 0 0 0-1.15-.2 1 1 0 0 0-.6.92v.38a1 1 0 0 1-1 1h-.2a1 1 0 0 1-1-1v-.38a1 1 0 0 0-.65-.92 1 1 0 0 0-1.1.2l-.25.26a1 1 0 0 1-1.42 0l-.14-.14a1 1 0 0 1 0-1.42l.26-.25a1 1 0 0 0 .2-1.15 1 1 0 0 0-.92-.6H2.6a1 1 0 0 1-1-1v-.2a1 1 0 0 1 1-1h.36a1 1 0 0 0 .92-.65 1 1 0 0 0-.2-1.1l-.26-.25a1 1 0 0 1 0-1.42l.14-.14a1 1 0 0 1 1.42 0l.25.26a1 1 0 0 0 1.1.2h.05a1 1 0 0 0 .6-.92V2.6a1 1 0 0 1 1-1Z"
+        />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 16 16">
+        <path d="m6 4 4 4-4 4" />
+      </symbol>
+      <symbol id="i-external" viewBox="0 0 16 16">
+        <path d="M9.5 2.5H13v3.5" />
+        <path d="M13 2.5 7.5 8" />
+        <path d="M12 9.5v3a.9.9 0 0 1-.9.9H3.4a.9.9 0 0 1-.9-.9V4.9a.9.9 0 0 1 .9-.9h3" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 16 16">
+        <path d="M8 3.75v8.5M3.75 8h8.5" />
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 16 16">
+        <path d="M4 8h8" />
+      </symbol>
+    </svg>
+
+    <header class="titlebar">
+      <div class="titlebar-main">
+        <span id="agg-dot" class="dot dot--unknown"></span>
+        <div class="titlebar-text">
+          <span id="agg-text" class="titlebar-title">Loading…</span>
+          <span id="last-updated" class="titlebar-subtitle"></span>
         </div>
       </div>
-      <div id="last-updated" class="last-updated"></div>
+      <div class="titlebar-actions">
+        <button id="refresh-btn" class="icon-btn" title="Refresh now" aria-label="Refresh now">
+          <svg class="icon"><use href="#i-refresh" /></svg>
+        </button>
+        <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">
+          <svg class="icon"><use href="#i-settings" /></svg>
+        </button>
+      </div>
     </header>
 
-    <main id="panel-view">
-      <ul id="site-list" class="site-list"></ul>
+    <main id="panel-view" class="view">
+      <div class="scroll">
+        <ul id="site-list" class="site-list"></ul>
+      </div>
     </main>
 
-    <main id="settings-view" class="settings-view hidden">
-      <section class="setting-section">
-        <h3>General</h3>
-        <label class="field">
-          <span>Refresh interval (seconds)</span>
-          <input id="interval-input" type="number" min="30" step="15" />
-        </label>
-        <label class="field field--row">
-          <span>Notifications on status change</span>
-          <input id="notify-input" type="checkbox" />
-        </label>
-      </section>
+    <section id="settings-view" class="view settings-view hidden">
+      <div class="scroll settings-scroll">
+        <div id="settings-inner" class="settings-inner">
+        <h2 class="group-label">General</h2>
+        <div class="group">
+          <div class="form-row">
+            <label for="interval-input">Refresh interval</label>
+            <div class="stepper">
+              <input id="interval-input" type="number" min="30" step="30" />
+              <span class="stepper-unit">sec</span>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="notify-input">Notify on status change</label>
+            <label class="switch">
+              <input id="notify-input" type="checkbox" />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+        </div>
 
-      <section class="setting-section">
-        <h3>Sites</h3>
-        <ul id="site-config-list" class="site-config-list"></ul>
-        <button id="add-site-btn" class="add-btn">+ Add site</button>
-      </section>
+        <h2 class="group-label">Sites</h2>
+        <div class="group">
+          <ul id="site-config-list" class="site-config-list"></ul>
+          <button id="add-site-btn" class="row-btn">
+            <svg class="icon"><use href="#i-plus" /></svg>
+            Add site
+          </button>
+        </div>
+        </div>
+      </div>
 
       <footer class="settings-footer">
-        <button id="save-btn" class="primary-btn">Save</button>
-        <button id="cancel-btn" class="ghost-btn">Cancel</button>
+        <button id="cancel-btn" class="btn">Cancel</button>
+        <button id="save-btn" class="btn btn--primary">Save</button>
       </footer>
-    </main>
+    </section>
+
+    <!-- Native alert panels aren't available in this webview, so the panel
+         renders its own sheet in the same style. -->
+    <div id="dialog" class="dialog-backdrop hidden">
+      <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title">
+        <h3 id="dialog-title" class="dialog-title"></h3>
+        <p id="dialog-body" class="dialog-body"></p>
+        <button id="dialog-ok" class="btn btn--primary dialog-ok">OK</button>
+      </div>
+    </div>
 
     <script src="app.js"></script>
   </body>

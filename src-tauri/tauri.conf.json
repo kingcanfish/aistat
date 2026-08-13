@@ -1,26 +1,35 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Status",
+  "productName": "AIStat",
   "version": "0.1.0",
-  "identifier": "com.aiisdown.app",
+  "identifier": "com.aistat.app",
   "build": {
     "frontendDist": "../ui"
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
-        "title": "AI Status",
-        "width": 380,
-        "height": 540,
-        "minWidth": 340,
-        "minHeight": 400,
+        "title": "AIStat",
+        "width": 348,
+        "height": 200,
+        "minWidth": 348,
+        "minHeight": 120,
         "decorations": false,
         "resizable": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "visible": false
+        "visible": false,
+        "transparent": true,
+        "shadow": true,
+        "acceptFirstMouse": true,
+        "windowEffects": {
+          "effects": ["popover", "mica", "acrylic"],
+          "state": "active",
+          "radius": 12
+        }
       }
     ],
     "security": {

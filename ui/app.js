@@ -1,142 +1,206 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const COLORS = {
-  green: "#2ec27e",
-  yellow: "#f0c832",
-  orange: "#f58a1f",
-  red: "#e03e3e",
-  blue: "#3b82f6",
-  gray: "#9ca3af",
+/** Worst-first, matching `Status::DEFAULT_PRIORITY` in crates/core. */
+const SEVERITY = [
+  "full_outage",
+  "partial_outage",
+  "maintenance",
+  "degraded",
+  "operational",
+  "unknown",
+];
+
+const LABELS = {
+  operational: "Operational",
+  degraded: "Degraded performance",
+  partial_outage: "Partial outage",
+  full_outage: "Full outage",
+  maintenance: "Maintenance",
+  unknown: "Unknown",
 };
 
-function dotEl(status) {
+const label = (status) => LABELS[status] ?? status.replace(/_/g, " ");
+
+function icon(id) {
+  const span = document.createElement("span");
+  span.innerHTML = `<svg class="icon"><use href="#${id}"/></svg>`;
+  return span.firstElementChild;
+}
+
+function dot(status, small = false) {
   const el = document.createElement("span");
-  el.className = `dot dot--${status}`;
+  el.className = `dot dot--${status}${small ? " dot--sm" : ""}`;
   return el;
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
 }
 
 function fmtTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d) ? iso : d.toLocaleString();
+  if (isNaN(d)) return iso;
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+/* ---------- Panel ---------- */
+
+/** Stable per-name hue so a monogram keeps its color across restarts. */
+function hueFor(name) {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % 360;
+  return hash;
+}
+
+/**
+ * The site's own mark. The icon URL is resolved in Rust from the page's
+ * `<link rel=icon>`; a lettered chip covers sites that don't publish one, or
+ * whose icon fails to load.
+ */
+function siteIcon(site) {
+  const wrap = el("span", "site-icon");
+
+  const mono = el("span", "site-icon-mono", (site.name.trim()[0] ?? "?").toUpperCase());
+  mono.style.setProperty("--mono-hue", String(hueFor(site.name)));
+  wrap.appendChild(mono);
+
+  if (site.icon) {
+    const img = el("img", "site-icon-img");
+    img.decoding = "async";
+    img.alt = "";
+    // No loading="lazy" here: the image is stacked invisibly over the
+    // monogram, and a lazy image inside a hidden box never enters the
+    // viewport, so it would never load and never reveal itself.
+    img.addEventListener("load", () => wrap.classList.add("has-img"));
+    img.src = site.icon;
+    wrap.appendChild(img);
+  }
+  return wrap;
+}
+
+function incidentCard(inc) {
+  const card = el("div", "incident");
+  const head = el("div", "incident-head");
+  head.appendChild(dot(inc.impact, true));
+  head.appendChild(el("span", "incident-title", inc.title));
+  card.appendChild(head);
+
+  const meta = [inc.lifecycle, fmtTime(inc.updated_at)].filter(Boolean).join(" · ");
+  if (meta) card.appendChild(el("div", "incident-time", meta));
+  if (inc.latest_update) card.appendChild(el("div", "incident-update", inc.latest_update));
+  return card;
+}
+
+function siteDetail(site) {
+  const inner = el("div", "site-detail-inner");
+
+  if (site.error) {
+    inner.appendChild(el("div", "site-error", `Couldn't fetch: ${site.error}`));
+  }
+
+  const impaired = (site.components ?? []).filter((c) => c.status !== "operational");
+
+  // Incidents first: they're what you opened the panel to read.
+  if (site.incidents?.length) {
+    inner.appendChild(el("div", "section-label", "Incidents"));
+    for (const inc of site.incidents) inner.appendChild(incidentCard(inc));
+  } else if (impaired.length) {
+    // Providers often flip component statuses without filing an incident;
+    // say so explicitly instead of leaving the section blank.
+    inner.appendChild(el("div", "section-label", "Incidents"));
+    inner.appendChild(
+      el(
+        "div",
+        "no-incident",
+        `No incident filed, but ${impaired.length} component${
+          impaired.length === 1 ? "" : "s"
+        } report degraded service.`
+      )
+    );
+  }
+
+  if (site.components?.length) {
+    inner.appendChild(el("div", "section-label", "Components"));
+    // Worst first, so problems don't hide at the bottom of a long list.
+    const sorted = [...site.components].sort(
+      (a, b) => SEVERITY.indexOf(a.status) - SEVERITY.indexOf(b.status)
+    );
+    for (const c of sorted) {
+      const row = el("div", "component-row");
+      row.appendChild(dot(c.status, true));
+      const name = el("span", "component-name", c.name);
+      name.title = c.name; // long names ellipsize at this width
+      row.appendChild(name);
+      row.appendChild(el("span", "site-status", label(c.status)));
+      inner.appendChild(row);
+    }
+  }
+
+  const link = el("button", "site-link");
+  link.appendChild(document.createTextNode("Open status page"));
+  link.appendChild(icon("i-external"));
+  link.addEventListener("click", (e) => {
+    e.stopPropagation();
+    invoke("open_url", { url: site.url }).catch((err) => console.error("open_url", err));
+  });
+  inner.appendChild(link);
+
+  const detail = el("div", "site-detail");
+  detail.appendChild(inner);
+  const wrap = el("div", "site-detail-wrap");
+  wrap.appendChild(detail);
+  return wrap;
 }
 
 function renderPanel(statuses) {
   const list = document.getElementById("site-list");
-  list.innerHTML = "";
+  // Remember which rows were expanded so a background refresh doesn't collapse them.
+  const open = new Set([...list.querySelectorAll(".site-item.is-open")].map((n) => n.dataset.id));
+  list.replaceChildren();
 
-  if (!statuses || statuses.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "site-item";
-    empty.style.padding = "14px";
-    empty.style.color = "var(--text-dim)";
-    empty.textContent = "No sites configured.";
-    list.appendChild(empty);
+  if (!statuses?.length) {
+    list.appendChild(el("li", "empty-state", "No sites configured."));
     return;
   }
 
   for (const site of statuses) {
-    const li = document.createElement("li");
-    li.className = "site-item";
+    const li = el("li", "site-item");
+    li.dataset.id = site.id;
+    if (open.has(site.id)) li.classList.add("is-open");
 
-    const row = document.createElement("div");
-    row.className = "site-row";
-    row.appendChild(dotEl(site.overall));
-    const name = document.createElement("span");
-    name.className = "site-name";
-    name.textContent = site.name;
-    row.appendChild(name);
-    const statusText = document.createElement("span");
-    statusText.className = "site-status";
-    statusText.textContent = site.overall.replace(/_/g, " ");
-    row.appendChild(statusText);
+    const row = el("div", "site-row");
+    row.appendChild(siteIcon(site));
+    row.appendChild(dot(site.overall));
+    row.appendChild(el("span", "site-name", site.name));
+
+    // Surface that there is something to read without expanding the row.
+    const incidents = site.incidents?.length ?? 0;
+    const impaired = (site.components ?? []).filter((c) => c.status !== "operational").length;
+    if (incidents || impaired) {
+      const count = incidents || impaired;
+      const chip = el("span", `site-chip site-chip--${site.overall}`, String(count));
+      chip.title = incidents
+        ? `${incidents} open incident${incidents === 1 ? "" : "s"}`
+        : `${impaired} component${impaired === 1 ? "" : "s"} affected`;
+      row.appendChild(chip);
+    }
+
+    row.appendChild(el("span", "site-status", label(site.overall)));
+    const chevron = icon("i-chevron");
+    chevron.classList.add("site-chevron");
+    row.appendChild(chevron);
+    row.addEventListener("click", () => li.classList.toggle("is-open"));
+
     li.appendChild(row);
-
-    const detail = document.createElement("div");
-    detail.className = "site-detail";
-    detail.style.display = "none";
-
-    if (site.error) {
-      const err = document.createElement("div");
-      err.className = "incident-update";
-      err.textContent = `Error: ${site.error}`;
-      detail.appendChild(err);
-    }
-
-    if (site.components && site.components.length > 0) {
-      const label = document.createElement("div");
-      label.className = "section-label";
-      label.textContent = "Components";
-      detail.appendChild(label);
-      for (const c of site.components) {
-        const r = document.createElement("div");
-        r.className = "component-row";
-        r.appendChild(dotEl(c.status));
-        const n = document.createElement("span");
-        n.className = "component-name";
-        n.textContent = c.name;
-        r.appendChild(n);
-        detail.appendChild(r);
-      }
-    }
-
-    if (site.incidents && site.incidents.length > 0) {
-      const label = document.createElement("div");
-      label.className = "section-label";
-      label.textContent = "Incidents";
-      detail.appendChild(label);
-      for (const inc of site.incidents) {
-        const wrap = document.createElement("div");
-        wrap.className = "incident-row";
-        wrap.style.alignItems = "flex-start";
-        wrap.style.flexDirection = "column";
-        wrap.style.gap = "2px";
-
-        const head = document.createElement("div");
-        head.style.display = "flex";
-        head.style.alignItems = "center";
-        head.style.gap = "8px";
-        head.style.width = "100%";
-        head.appendChild(dotEl(inc.impact));
-        const t = document.createElement("span");
-        t.className = "incident-title";
-        t.textContent = inc.title;
-        head.appendChild(t);
-        wrap.appendChild(head);
-
-        if (inc.updated_at) {
-          const time = document.createElement("div");
-          time.className = "incident-time";
-          time.textContent = fmtTime(inc.updated_at);
-          wrap.appendChild(time);
-        }
-        if (inc.latest_update) {
-          const upd = document.createElement("div");
-          upd.className = "incident-update";
-          upd.textContent = inc.latest_update;
-          wrap.appendChild(upd);
-        }
-        detail.appendChild(wrap);
-      }
-    }
-
-    const link = document.createElement("a");
-    link.className = "site-link";
-    link.textContent = "Open status page ↗";
-    link.addEventListener("click", (e) => {
-      e.stopPropagation();
-      invoke("open_url", { url: site.url });
-    });
-    detail.appendChild(link);
-
-    li.appendChild(detail);
-
-    row.addEventListener("click", () => {
-      const hidden = detail.style.display === "none";
-      detail.style.display = hidden ? "flex" : "none";
-    });
-
+    li.appendChild(siteDetail(site));
     list.appendChild(li);
   }
 }
@@ -146,160 +210,251 @@ function renderHeader(statuses) {
   const aggText = document.getElementById("agg-text");
   const lastUpdated = document.getElementById("last-updated");
 
-  if (!statuses || statuses.length === 0) {
-    aggDot.className = "dot dot--gray";
+  if (!statuses?.length) {
+    aggDot.className = "dot dot--unknown";
     aggText.textContent = "No sites";
     lastUpdated.textContent = "";
     return;
   }
 
-  // worst = full_outage > partial_outage > maintenance > degraded > operational > unknown
-  const order = ["full_outage", "partial_outage", "maintenance", "degraded", "operational", "unknown"];
-  let worst = "operational";
-  for (const s of order) {
-    if (statuses.some((x) => x.overall === s)) {
-      worst = s;
-      break;
-    }
-  }
-
+  const worst = SEVERITY.find((s) => statuses.some((x) => x.overall === s)) ?? "unknown";
   aggDot.className = `dot dot--${worst}`;
-  aggText.textContent = worst.replace(/_/g, " ");
+  aggText.textContent = worst === "operational" ? "All systems operational" : label(worst);
 
-  const times = statuses.map((s) => s.fetched_at).filter(Boolean);
-  const latest = times.sort().at(-1);
+  const latest = statuses.map((s) => s.fetched_at).filter(Boolean).sort().at(-1);
   lastUpdated.textContent = latest ? `Updated ${fmtTime(latest)}` : "";
 }
 
-async function load() {
-  const statuses = await invoke("get_statuses");
+function render(statuses) {
   renderHeader(statuses);
   renderPanel(statuses);
 }
 
-async function refresh() {
-  const statuses = await invoke("refresh_now");
-  renderHeader(statuses);
-  renderPanel(statuses);
+async function load() {
+  render(await invoke("get_statuses"));
 }
+
+const refreshBtn = document.getElementById("refresh-btn");
+
+async function refresh() {
+  refreshBtn.classList.add("is-busy");
+  try {
+    render(await invoke("refresh_now"));
+  } finally {
+    refreshBtn.classList.remove("is-busy");
+  }
+}
+
+/* ---------- Window sizing ---------- */
+
+/**
+ * Keeps the window exactly as tall as its content (Rust clamps to a maximum,
+ * past which the list scrolls). Driven by a ResizeObserver so it also tracks
+ * rows expanding and collapsing.
+ */
+const titlebar = document.querySelector(".titlebar");
+const settingsFooter = document.querySelector(".settings-footer");
+const settingsView = document.getElementById("settings-view");
+
+let pendingResize = null;
+
+function syncPanelHeight() {
+  if (pendingResize) return;
+  pendingResize = requestAnimationFrame(() => {
+    pendingResize = null;
+    const inSettings = !settingsView.classList.contains("hidden");
+    const body = inSettings
+      ? document.getElementById("settings-inner").offsetHeight + settingsFooter.offsetHeight
+      : document.getElementById("site-list").offsetHeight;
+    invoke("resize_panel", { height: titlebar.offsetHeight + body });
+  });
+}
+
+new ResizeObserver(syncPanelHeight).observe(document.getElementById("site-list"));
+new ResizeObserver(syncPanelHeight).observe(document.getElementById("settings-inner"));
+
+/* ---------- Alert sheet ---------- */
+
+const dialogEl = document.getElementById("dialog");
+
+function showDialog(title, body) {
+  document.getElementById("dialog-title").textContent = title;
+  document.getElementById("dialog-body").textContent = body;
+  dialogEl.classList.remove("hidden");
+  document.getElementById("dialog-ok").focus();
+}
+
+function closeDialog() {
+  dialogEl.classList.add("hidden");
+}
+
+document.getElementById("dialog-ok").addEventListener("click", closeDialog);
+dialogEl.addEventListener("click", (e) => {
+  if (e.target === dialogEl) closeDialog();
+});
 
 /* ---------- Settings ---------- */
 
-function siteRow(site, onRemove) {
-  const item = document.createElement("div");
-  item.className = "site-config-item";
+let editingConfig = null;
 
-  const nameInput = document.createElement("input");
+function siteConfigRow(site) {
+  const item = el("li", "site-config-item");
+
+  const nameInput = el("input", "f-name");
   nameInput.type = "text";
   nameInput.placeholder = "Name";
   nameInput.value = site.name;
   item.appendChild(nameInput);
 
-  const urlInput = document.createElement("input");
-  urlInput.type = "text";
-  urlInput.placeholder = "URL";
-  urlInput.value = site.url;
-  item.appendChild(urlInput);
+  const badge = el("span", "adapter-badge", site.adapter ?? "");
+  item.appendChild(badge);
 
-  const adapterSelect = document.createElement("select");
-  for (const kind of ["statuspage", "flashduty"]) {
-    const opt = document.createElement("option");
-    opt.value = kind;
-    opt.textContent = kind;
-    if (site.adapter === kind) opt.selected = true;
-    adapterSelect.appendChild(opt);
-  }
-  item.appendChild(adapterSelect);
-
-  const remove = document.createElement("button");
-  remove.className = "remove-btn";
-  remove.textContent = "✕";
+  const remove = el("button", "remove-btn");
   remove.title = "Remove site";
-  remove.addEventListener("click", () => onRemove(item));
+  remove.setAttribute("aria-label", "Remove site");
+  remove.appendChild(icon("i-minus"));
+  remove.addEventListener("click", () => item.remove());
   item.appendChild(remove);
 
-  item._nameInput = nameInput;
-  item._urlInput = urlInput;
-  item._adapterSelect = adapterSelect;
+  const urlInput = el("input", "f-url");
+  urlInput.type = "text";
+  urlInput.placeholder = "https://status.example.com";
+  urlInput.value = site.url;
+  // The adapter is derived from the URL, so any edit invalidates it.
+  urlInput.addEventListener("input", () => {
+    item.classList.remove("is-invalid");
+    if (urlInput.value.trim() !== item._detectedFor) badge.textContent = "";
+  });
+  item.appendChild(urlInput);
+
+  item._inputs = { nameInput, urlInput, badge };
+  item._detectedFor = site.url;
   return item;
 }
 
-let editingConfig = null;
+function renderSiteConfig(sites) {
+  document
+    .getElementById("site-config-list")
+    .replaceChildren(...sites.map(siteConfigRow));
+}
 
 async function openSettings() {
   editingConfig = await invoke("get_config");
-  document.getElementById("panel-view").classList.add("hidden");
-  document.getElementById("settings-view").classList.remove("hidden");
   document.getElementById("interval-input").value = editingConfig.refresh_interval_seconds;
   document.getElementById("notify-input").checked = editingConfig.notifications_enabled;
-  renderSiteConfig();
+  renderSiteConfig(editingConfig.sites);
+  document.getElementById("panel-view").classList.add("hidden");
+  settingsView.classList.remove("hidden");
+  document.body.classList.add("is-settings");
+  document.getElementById("agg-text").textContent = "Settings";
+  // Don't let a stray click outside the panel discard unsaved edits.
+  invoke("set_panel_pinned", { pinned: true });
+  syncPanelHeight();
 }
 
-function renderSiteConfig() {
-  const list = document.getElementById("site-config-list");
-  list.innerHTML = "";
-  editingConfig.sites.forEach((site, i) => {
-    const row = siteRow(site, () => {
-      editingConfig.sites.splice(i, 1);
-      renderSiteConfig();
-    });
-    list.appendChild(row);
-  });
+/**
+ * Resolves the adapter for every row whose URL changed. Rows the backend
+ * can't identify are marked invalid and reported, and the save is abandoned so
+ * nothing is silently dropped.
+ */
+async function resolveAdapters() {
+  const rows = [...document.querySelectorAll("#site-config-list .site-config-item")];
+  const unsupported = [];
+
+  await Promise.all(
+    rows.map(async (row) => {
+      const url = row._inputs.urlInput.value.trim();
+      if (!url || (row._detectedFor === url && row._inputs.badge.textContent)) return;
+
+      row.classList.add("is-checking");
+      try {
+        const adapter = await invoke("detect_adapter", { url });
+        row._inputs.badge.textContent = adapter;
+        row._detectedFor = url;
+        row.classList.remove("is-invalid");
+      } catch (err) {
+        row.classList.add("is-invalid");
+        row._inputs.badge.textContent = "";
+        unsupported.push(String(err));
+      } finally {
+        row.classList.remove("is-checking");
+      }
+    })
+  );
+
+  return unsupported;
 }
 
 function collectSites() {
-  const rows = document.querySelectorAll("#site-config-list .site-config-item");
   const sites = [];
-  for (const row of rows) {
-    const name = row._nameInput.value.trim();
-    const url = row._urlInput.value.trim();
-    const adapter = row._adapterSelect.value;
-    if (!name || !url) continue;
+  for (const row of document.querySelectorAll("#site-config-list .site-config-item")) {
+    const name = row._inputs.nameInput.value.trim();
+    const url = row._inputs.urlInput.value.trim();
+    const adapter = row._inputs.badge.textContent.trim();
+    if (!name || !url || !adapter) continue;
     sites.push({
       id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
       name,
-      url,
+      url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
       adapter,
     });
   }
   return sites;
 }
 
+const saveBtn = document.getElementById("save-btn");
+
 async function saveSettings() {
-  editingConfig.refresh_interval_seconds = Math.max(
-    30,
-    parseInt(document.getElementById("interval-input").value, 10) || 300
-  );
-  editingConfig.notifications_enabled = document.getElementById("notify-input").checked;
-  editingConfig.sites = collectSites();
-  await invoke("set_config", { config: editingConfig });
-  closeSettings();
+  saveBtn.disabled = true;
+  try {
+    const unsupported = await resolveAdapters();
+    if (unsupported.length) {
+      showDialog("Unsupported status page", unsupported.join("\n\n"));
+      return;
+    }
+
+    editingConfig.refresh_interval_seconds = Math.max(
+      30,
+      parseInt(document.getElementById("interval-input").value, 10) || 300
+    );
+    editingConfig.notifications_enabled = document.getElementById("notify-input").checked;
+    editingConfig.sites = collectSites();
+    await invoke("set_config", { config: editingConfig });
+    closeSettings();
+    refresh();
+  } finally {
+    saveBtn.disabled = false;
+  }
 }
 
 function closeSettings() {
-  document.getElementById("settings-view").classList.add("hidden");
+  settingsView.classList.add("hidden");
   document.getElementById("panel-view").classList.remove("hidden");
+  document.body.classList.remove("is-settings");
+  invoke("set_panel_pinned", { pinned: false });
+  load();
+  syncPanelHeight();
 }
 
 /* ---------- Wiring ---------- */
 
-document.getElementById("refresh-btn").addEventListener("click", refresh);
+refreshBtn.addEventListener("click", refresh);
 document.getElementById("settings-btn").addEventListener("click", openSettings);
-document.getElementById("save-btn").addEventListener("click", saveSettings);
+saveBtn.addEventListener("click", saveSettings);
 document.getElementById("cancel-btn").addEventListener("click", closeSettings);
 document.getElementById("add-site-btn").addEventListener("click", () => {
-  editingConfig.sites.push({
-    id: "new-site",
-    name: "",
-    url: "https://status.example.com",
-    adapter: "statuspage",
-  });
-  renderSiteConfig();
+  const row = siteConfigRow({ name: "", url: "", adapter: "" });
+  document.getElementById("site-config-list").appendChild(row);
+  row._inputs.nameInput.focus();
 });
 
-listen("status-updated", (event) => {
-  renderHeader(event.payload);
-  renderPanel(event.payload);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!dialogEl.classList.contains("hidden")) closeDialog();
+  else if (!settingsView.classList.contains("hidden")) closeSettings();
 });
+
+listen("status-updated", (event) => render(event.payload));
+listen("open-settings", () => openSettings());
 
 load();
