@@ -1,0 +1,238 @@
+name: Release
+
+# Tagging is the only trigger for a release. The tag must agree with the
+# version in Cargo.toml, which is the single source of truth: tauri.conf.json
+# deliberately has no "version" field, so Tauri reads it from Cargo.toml.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (vX.Y.Z) — must already exist'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  HOMEBREW_TAP_REPO: kingcanfish/homebrew-tap
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Refuses to build anything until the tag and Cargo.toml agree, and opens the
+  # draft release the build matrix uploads into. Creating it up front avoids
+  # five parallel jobs racing to create the same release.
+  preflight:
+    name: Check version and open draft release
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Tag must match Cargo.toml
+        id: version
+        run: |
+          set -euo pipefail
+          CARGO_VERSION="$(python3 - <<'PY'
+          import re, pathlib
+          text = pathlib.Path("Cargo.toml").read_text()
+          block = re.search(r"\[workspace\.package\](.*?)(?=\n\[|\Z)", text, re.S).group(1)
+          print(re.search(r'version\s*=\s*"([^"]+)"', block).group(1))
+          PY
+          )"
+          TAG_VERSION="${RELEASE_TAG#v}"
+
+          echo "Cargo.toml : $CARGO_VERSION"
+          echo "git tag    : $RELEASE_TAG"
+
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $RELEASE_TAG does not match Cargo.toml version $CARGO_VERSION." \
+                 "Bump [workspace.package] version in Cargo.toml, commit, then retag."
+            exit 1
+          fi
+          echo "version=$CARGO_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --title "AIStat ${RELEASE_TAG}" \
+              --notes-file .github/release-notes.md
+          fi
+          echo "id=$(gh release view "$RELEASE_TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.label }}
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One macOS job covers both architectures: a universal binary is what
+          # the Homebrew cask ships, so Intel and Apple Silicon share a build.
+          - os: macos-14
+            label: macOS (universal)
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles app,dmg
+
+          - os: ubuntu-22.04
+            label: Linux (x86_64)
+            rust_targets: x86_64-unknown-linux-gnu
+            args: --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage
+
+          # Native arm64 runner: cross-compiling a webkit2gtk app is far more
+          # trouble than it is worth.
+          - os: ubuntu-22.04-arm
+            label: Linux (aarch64)
+            rust_targets: aarch64-unknown-linux-gnu
+            args: --target aarch64-unknown-linux-gnu --bundles deb,rpm
+
+          - os: windows-latest
+            label: Windows (x86_64)
+            rust_targets: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc --bundles nsis,msi
+
+          # WiX has no usable arm64 story, so this one ships the NSIS installer.
+          - os: windows-11-arm
+            label: Windows (aarch64)
+            rust_targets: aarch64-pc-windows-msvc
+            args: --target aarch64-pc-windows-msvc --bundles nsis
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            file \
+            wget
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.label }}
+          workspaces: '. -> target'
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Run core tests
+        run: cargo test -p aistat-core --locked
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing is optional. Set these secrets and the same workflow starts
+          # producing signed, notarized builds with no edits here.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          releaseId: ${{ needs.preflight.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  publish:
+    name: Publish release
+    needs: [preflight, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Undraft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          echo "### Assets" >> "$GITHUB_STEP_SUMMARY"
+          gh release view "$RELEASE_TAG" --json assets \
+            -q '.assets[] | "- \(.name)  (\(.size/1048576*100|floor/100) MB)"' >> "$GITHUB_STEP_SUMMARY"
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: [preflight, publish]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Render cask and push to tap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "::error::Missing HOMEBREW_TAP_TOKEN secret; cannot update ${HOMEBREW_TAP_REPO}."
+            exit 1
+          fi
+
+          # Ask the release what the dmg is actually called rather than
+          # second-guessing Tauri's naming.
+          DMG="$(gh release view "$RELEASE_TAG" --json assets \
+                 -q '.assets[].name' | grep -E '\.dmg$' | head -1)"
+          if [ -z "$DMG" ]; then
+            echo "::error::No .dmg asset on $RELEASE_TAG; the macOS build must have failed."
+            exit 1
+          fi
+
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${DMG}"
+          curl -fsSL -o app.dmg "$URL"
+          SHA="$(sha256sum app.dmg | awk '{print $1}')"
+          echo "asset: $DMG"
+          echo "sha256: $SHA"
+
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPO}.git" tap
+          mkdir -p tap/Casks
+          bash scripts/render-homebrew-cask.sh "$VERSION" "$URL" "$SHA" > tap/Casks/aistat.rb
+
+          cd tap
+          git add Casks/aistat.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date."
+            exit 0
+          fi
+          git -c user.name="aistat release" -c user.email="actions@github.com" \
+            commit -m "chore: update aistat ${RELEASE_TAG}"
+          git push

@@ -12,6 +12,28 @@ Built with **Tauri (Rust + web frontend)**. Ships with three adapters:
 | status.openai.com | incident.io (StatusPage-compatible API) | `statuspage` |
 | status.deepseek.com | FlashDuty / Flashcat | `flashduty` |
 
+## Install
+
+**macOS (Homebrew)**
+
+```sh
+brew tap kingcanfish/tap
+brew install --cask aistat
+```
+
+**Everything else** — grab an installer from the
+[latest release](https://github.com/kingcanfish/aistat/releases/latest):
+
+| Platform | Architectures | Artifact |
+|---|---|---|
+| macOS | Intel + Apple Silicon (universal) | `.dmg` |
+| Windows | x86_64, arm64 | `.exe` (NSIS); x86_64 also gets `.msi` |
+| Linux | x86_64, aarch64 | `.deb`, `.rpm`; x86_64 also gets `.AppImage` |
+
+Builds are not code-signed. On macOS clear the quarantine flag once with
+`xattr -dr com.apple.quarantine "/Applications/AIStat.app"`; on Windows choose
+*More info* → *Run anyway* at the SmartScreen prompt.
+
 ## Features
 
 - Tray icon reflects the aggregate (worst) status across all sites.
@@ -78,6 +100,33 @@ cargo tauri build
 
 `cargo tauri` requires the Tauri CLI: `npm i -g @tauri-apps/cli` (or use
 `bunx @tauri-apps/cli`).
+
+## Releasing
+
+`[workspace.package] version` in `Cargo.toml` is the single source of truth.
+`tauri.conf.json` deliberately has **no** `version` field, so Tauri falls back
+to Cargo.toml, and `.github/workflows/release.yml` refuses to build a tag that
+disagrees with it.
+
+```sh
+scripts/release.sh 0.2.0                 # bump, commit, tag
+git push origin main --follow-tags       # start the build
+```
+
+Pushing a `v*` tag runs the release workflow, which:
+
+1. checks the tag against `Cargo.toml` and opens a draft release;
+2. builds all five targets in parallel and uploads their bundles;
+3. publishes the release;
+4. renders `Casks/aistat.rb` and pushes it to `kingcanfish/homebrew-tap`.
+
+**Required secret:** `HOMEBREW_TAP_TOKEN` — a PAT with `contents:write` on the
+tap repository. Without it every step still runs but the tap update fails.
+
+**Optional secrets** for signed, notarized macOS builds. The workflow already
+passes them through, so adding them is all that's needed:
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
 
 ## Configuration
 
