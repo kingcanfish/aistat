@@ -29,7 +29,7 @@ cask "aistat" do
   desc "Menu bar app that watches AI service status pages"
   homepage "https://github.com/kingcanfish/aistat"
 
-  depends_on macos: ">= :big_sur"
+  depends_on macos: :big_sur
 
   app "AIStat.app"
 
