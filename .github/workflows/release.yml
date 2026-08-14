@@ -152,17 +152,15 @@ jobs:
       - name: Run core tests
         run: cargo test -p aistat-core --locked
 
+      # The macOS build is deliberately unsigned, so no APPLE_* variables are
+      # passed here. Do not add them back speculatively: Tauri codesigns based
+      # on whether APPLE_CERTIFICATE is *present*, and Actions exports an unset
+      # secret as an empty string — present enough to send the bundler off to
+      # `security import` a certificate that isn't there, which fails the build.
+      # The cask's caveats tell users to clear the quarantine flag instead.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing is optional. Set these secrets and the same workflow starts
-          # producing signed, notarized builds with no edits here.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           releaseId: ${{ needs.preflight.outputs.release_id }}
           args: ${{ matrix.args }}
