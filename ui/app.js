@@ -258,16 +258,37 @@ const settingsView = document.getElementById("settings-view");
 
 let pendingResize = null;
 
+/** Measures the visible view and hands the height to Rust. Synchronous. */
+function applyPanelHeight() {
+  const inSettings = !settingsView.classList.contains("hidden");
+  const body = inSettings
+    ? document.getElementById("settings-inner").offsetHeight + settingsFooter.offsetHeight
+    : document.getElementById("site-list").offsetHeight;
+  invoke("resize_panel", { height: titlebar.offsetHeight + body });
+}
+
 function syncPanelHeight() {
   if (pendingResize) return;
   pendingResize = requestAnimationFrame(() => {
     pendingResize = null;
-    const inSettings = !settingsView.classList.contains("hidden");
-    const body = inSettings
-      ? document.getElementById("settings-inner").offsetHeight + settingsFooter.offsetHeight
-      : document.getElementById("site-list").offsetHeight;
-    invoke("resize_panel", { height: titlebar.offsetHeight + body });
+    applyPanelHeight();
   });
+}
+
+/**
+ * Runs the pending resize now instead of on the next frame.
+ *
+ * A hidden window's webview is throttled — `requestAnimationFrame` stops
+ * firing entirely — so anything deferred while the panel is going away only
+ * lands when it comes back, one frame *after* it is on screen again. That is
+ * visible as a flash of the old view at the old height.
+ */
+function flushPanelHeight() {
+  if (pendingResize) {
+    cancelAnimationFrame(pendingResize);
+    pendingResize = null;
+  }
+  applyPanelHeight();
 }
 
 new ResizeObserver(syncPanelHeight).observe(document.getElementById("site-list"));
@@ -313,7 +334,10 @@ function siteConfigRow(site) {
   remove.title = "Remove site";
   remove.setAttribute("aria-label", "Remove site");
   remove.appendChild(icon("i-minus"));
-  remove.addEventListener("click", () => item.remove());
+  remove.addEventListener("click", () => {
+    item.remove();
+    setSettingsDirty(true);
+  });
   item.appendChild(remove);
 
   const urlInput = el("input", "f-url");
@@ -338,6 +362,21 @@ function renderSiteConfig(sites) {
     .replaceChildren(...sites.map(siteConfigRow));
 }
 
+/**
+ * Pins the panel open once the settings form has edits worth protecting.
+ *
+ * Merely *looking* at settings isn't worth overriding dismiss-on-blur: a panel
+ * that won't go away when clicked past reads as stuck. Only an actual edit
+ * earns that, and only until it's saved or discarded.
+ */
+let settingsDirty = false;
+
+function setSettingsDirty(dirty) {
+  if (settingsDirty === dirty) return;
+  settingsDirty = dirty;
+  invoke("set_panel_pinned", { pinned: dirty });
+}
+
 async function openSettings() {
   editingConfig = await invoke("get_config");
   document.getElementById("interval-input").value = editingConfig.refresh_interval_seconds;
@@ -347,8 +386,7 @@ async function openSettings() {
   settingsView.classList.remove("hidden");
   document.body.classList.add("is-settings");
   document.getElementById("agg-text").textContent = "Settings";
-  // Don't let a stray click outside the panel discard unsaved edits.
-  invoke("set_panel_pinned", { pinned: true });
+  setSettingsDirty(false);
   syncPanelHeight();
 }
 
@@ -427,13 +465,14 @@ async function saveSettings() {
   }
 }
 
-function closeSettings() {
+function closeSettings({ immediate = false } = {}) {
   settingsView.classList.add("hidden");
   document.getElementById("panel-view").classList.remove("hidden");
   document.body.classList.remove("is-settings");
-  invoke("set_panel_pinned", { pinned: false });
+  setSettingsDirty(false);
   load();
-  syncPanelHeight();
+  if (immediate) flushPanelHeight();
+  else syncPanelHeight();
 }
 
 /* ---------- Wiring ---------- */
@@ -446,12 +485,30 @@ document.getElementById("add-site-btn").addEventListener("click", () => {
   const row = siteConfigRow({ name: "", url: "", adapter: "" });
   document.getElementById("site-config-list").appendChild(row);
   row._inputs.nameInput.focus();
+  setSettingsDirty(true);
 });
+
+// Typing in any field pins the panel. `input` bubbles from every control the
+// form has — text boxes, the number field and the checkbox — so one listener
+// on the view covers them; adding and removing rows mark themselves.
+settingsView.addEventListener("input", () => setSettingsDirty(true));
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!dialogEl.classList.contains("hidden")) closeDialog();
   else if (!settingsView.classList.contains("hidden")) closeSettings();
+});
+
+// Losing focus is what makes Rust hide the panel, and an unpinned settings
+// view has nothing worth keeping — so drop back to the list here, in the blur
+// handler itself. Doing it now rather than reacting to the hide afterwards is
+// the whole point: the window is still on screen, so the webview is not yet
+// throttled and both the view switch and the resize actually run. The pin
+// condition is the same one Rust checks, which is why the two agree on whether
+// the panel is about to disappear.
+window.addEventListener("blur", () => {
+  if (settingsDirty) return;
+  if (!settingsView.classList.contains("hidden")) closeSettings({ immediate: true });
 });
 
 listen("status-updated", (event) => render(event.payload));

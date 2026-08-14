@@ -208,6 +208,11 @@ fn tooltip_text(statuses: &[SiteStatus], overall: Status) -> String {
 
 /// Marks the panel as just-dismissed so the tray click that caused the blur
 /// does not immediately re-open it.
+///
+/// Deliberately silent towards the UI: anything the panel needs to reset on
+/// the way out has to happen before the window is hidden, because a hidden
+/// window's webview stops servicing frames. The UI hangs that off its own
+/// `blur` event instead.
 pub fn note_panel_hidden(app: &AppHandle) {
     *app.state::<AppState>().hidden_at.lock().unwrap() = Some(std::time::Instant::now());
 }
