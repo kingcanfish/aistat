@@ -21,3 +21,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 notify-rust = "4"
 open = "5"
 futures = "0.3"
+log = "0.4"
+# Default features pull in colour detection and regex filtering we don't need;
+# `humantime` keeps a readable timestamp on each line.
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }

@@ -18,14 +18,42 @@ const USER_AGENT: &str = concat!("aistat/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
-    #[error("http error: {0}")]
+    // Rendered through `chain` because this string is what the menu bar row
+    // shows: `reqwest::Error`'s own Display stops at "error sending request
+    // for url ...", which tells the user nothing they can act on. The reason —
+    // a bad certificate, a refused connection — is in the sources beneath it.
+    #[error("{}", chain(.0))]
     Http(#[from] reqwest::Error),
     #[error("parse error: {0}")]
     Parse(String),
-    #[error("stale data: {0}")]
-    Stale(String),
-    #[error("{0}")]
-    Message(String),
+}
+
+/// Selects the TLS backend, once per process.
+///
+/// Some status pages sit behind a device that resets any connection whose
+/// ClientHello fits in a single TCP segment — `status.deepseek.com` is one.
+/// Measured against it: a 1374-byte ClientHello is reset before the server
+/// answers, a 1678-byte one completes the handshake. The post-quantum
+/// X25519MLKEM768 key share is ~1.2KB on its own, so offering it pushes every
+/// ClientHello past that threshold, which is why `curl --curves
+/// X25519MLKEM768` reaches the site when a default Rust client can't.
+///
+/// [`rustls_graviola`] is the backend because it offers X25519MLKEM768 and is
+/// pure Rust: `ring` and `aws-lc-rs` both compile C, which would put a C
+/// toolchain (and NASM, on Windows) in the path of all five release targets.
+/// Its default group order already puts X25519MLKEM768 first and keeps
+/// X25519/secp256r1/secp384r1 behind it, so a server without post-quantum
+/// support still negotiates normally.
+///
+/// Installing fails only when something else got there first, which for a
+/// binary with one entry point means a second call from this same function.
+fn install_tls_backend() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if rustls_graviola::default_provider().install_default().is_err() {
+            log::warn!("a TLS backend was already installed; leaving it alone");
+        }
+    });
 }
 
 /// Builds the shared HTTP client.
@@ -34,6 +62,7 @@ pub enum ProviderError {
 /// sessions per client, which halves a warm refresh (measured ~600ms → ~300ms
 /// across three sites). A client per refresh throws that away.
 pub fn build_client() -> reqwest::Client {
+    install_tls_backend();
     reqwest::Client::builder()
         .timeout(TIMEOUT)
         .user_agent(USER_AGENT)
@@ -42,55 +71,12 @@ pub fn build_client() -> reqwest::Client {
         .unwrap_or_default()
 }
 
-/// Hosts whose TLS handshake Rust's stacks can't complete, so we go straight to
-/// the `curl` fallback instead of paying for a request that always fails.
-///
-/// A per-process memo only: skipping it merely costs the failed attempt again
-/// (~67ms), so a cold cache is never wrong, just slower.
-fn curl_only_hosts() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
-    static HOSTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
-        std::sync::OnceLock::new();
-    HOSTS.get_or_init(Default::default)
-}
-
-fn host_of(url: &str) -> String {
-    url.split("://")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or(url)
-        .to_string()
-}
-
-/// GETs `url` and deserializes the JSON body.
-///
-/// Some status pages sit behind middleboxes that reject the TLS ClientHello
-/// sent by Rust's TLS stacks (both rustls and the macOS Security.framework
-/// backend) while accepting OpenSSL's — `status.deepseek.com` is one. When the
-/// request fails before any HTTP response is seen, retry once through the
-/// system `curl`, which ships on macOS, Linux and Windows 10+ and uses a TLS
-/// profile those middleboxes accept.
+/// GETs `url` and returns the body.
 pub async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, ProviderError> {
-    let host = host_of(url);
-    if curl_only_hosts().lock().unwrap().contains(&host) {
-        return curl_get(url).await;
-    }
-
-    let response = match client.get(url).send().await {
-        Ok(r) => Some(r.error_for_status()?),
-        Err(e) if is_connection_error(&e) => None,
-        Err(e) => return Err(e.into()),
-    };
-
-    match response {
-        Some(r) => Ok(r.text().await?),
-        None => {
-            let body = curl_get(url).await?;
-            // curl got through where we couldn't: remember, and stop paying for
-            // the failing attempt on every future refresh.
-            curl_only_hosts().lock().unwrap().insert(host);
-            Ok(body)
-        }
-    }
+    let response = client.get(url).send().await.inspect_err(|e| {
+        log::warn!("{url}: request failed: {}", chain(e));
+    })?;
+    Ok(response.error_for_status()?.text().await?)
 }
 
 pub async fn fetch_json<T: DeserializeOwned>(
@@ -98,41 +84,29 @@ pub async fn fetch_json<T: DeserializeOwned>(
     url: &str,
 ) -> Result<T, ProviderError> {
     let body = fetch_text(client, url).await?;
-    serde_json::from_str(&body).map_err(|e| ProviderError::Parse(e.to_string()))
+    serde_json::from_str(&body).map_err(|e| {
+        // The body is the only way to tell "this isn't a status API" from "the
+        // schema moved", and it's the one thing the error itself never carries.
+        log::warn!("{url}: response was not the expected JSON: {e}; body starts: {:.200}", body);
+        ProviderError::Parse(e.to_string())
+    })
 }
 
-/// True when the request died before a response was received, which is the
-/// only case where falling back to another HTTP client can help.
-fn is_connection_error(e: &reqwest::Error) -> bool {
-    e.is_connect() || e.is_timeout() || e.is_request()
-}
-
-async fn curl_get(url: &str) -> Result<String, ProviderError> {
-    let output = tokio::process::Command::new("curl")
-        .arg("--silent")
-        .arg("--show-error")
-        .arg("--location")
-        .arg("--fail")
-        .arg("--max-time")
-        .arg(TIMEOUT.as_secs().to_string())
-        .arg("--user-agent")
-        .arg(USER_AGENT)
-        .arg("--")
-        .arg(url)
-        .output()
-        .await
-        .map_err(|e| ProviderError::Message(format!("connection refused, and curl fallback failed: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ProviderError::Message(format!(
-            "connection refused by the server's TLS layer; curl fallback also failed: {}",
-            stderr.trim()
-        )));
+/// Renders an error together with its source chain.
+///
+/// `reqwest::Error`'s own `Display` stops at "error sending request for url
+/// ...", which is the one part we already know. The reason — a TLS alert, a
+/// refused connection, a certificate that doesn't match — only lives in the
+/// sources underneath it, so a log line without them says nothing.
+fn chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut out = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        out.push_str(": ");
+        out.push_str(&cause.to_string());
+        source = cause.source();
     }
-
-    String::from_utf8(output.stdout)
-        .map_err(|e| ProviderError::Parse(format!("response was not valid UTF-8: {e}")))
+    out
 }
 
 pub async fn fetch_site(
@@ -158,7 +132,10 @@ pub async fn fetch_all(client: &reqwest::Client, sites: &[SiteConfig]) -> Vec<Si
         .zip(results)
         .map(|(site, result)| match result {
             Ok(status) => status,
-            Err(err) => SiteStatus::from_error(site, &err.to_string()),
+            Err(err) => {
+                log::error!("{} ({}): {err}", site.name, site.url);
+                SiteStatus::from_error(site, &err.to_string())
+            }
         })
         .collect()
 }
@@ -188,28 +165,15 @@ pub async fn detect_adapter(client: &reqwest::Client, url: &str) -> Option<Adapt
     match (sp.is_ok(), fd.is_ok()) {
         (true, _) => Some(AdapterKind::Statuspage),
         (false, true) => Some(AdapterKind::Flashduty),
-        (false, false) => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn host_of_extracts_the_authority() {
-        assert_eq!(host_of("https://status.deepseek.com/api/x.json"), "status.deepseek.com");
-        assert_eq!(host_of("https://status.claude.com"), "status.claude.com");
-        assert_eq!(host_of("http://example.com:8080/a/b"), "example.com:8080");
-    }
-
-    /// The memo is keyed by host, so every path on a site that needs the curl
-    /// fallback benefits once any one of them has proven it.
-    #[test]
-    fn curl_memo_is_shared_across_paths_on_a_host() {
-        let summary = host_of("https://example.invalid/api/v2/summary.json");
-        let page = host_of("https://example.invalid/");
-        assert_eq!(summary, page);
+        (false, false) => {
+            // The user only sees "unsupported"; the two probe errors are what
+            // actually say whether the page is unreachable or just not a
+            // status API.
+            log::warn!("{url}: no adapter matched");
+            log::warn!("  statuspage probe: {}", sp.unwrap_err());
+            log::warn!("  flashduty probe: {}", fd.unwrap_err());
+            None
+        }
     }
 }
 
@@ -227,5 +191,25 @@ impl SiteStatus {
             error: Some(message.to_string()),
             icon: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// The whole reason for choosing this TLS backend: it has to offer
+    /// X25519MLKEM768, and it has to offer it *first*, because that is what
+    /// grows the ClientHello past the segment boundary. A backend upgrade that
+    /// quietly reorders or drops the group would otherwise only show up as
+    /// DeepSeek going Unknown in the menu bar.
+    #[test]
+    fn tls_backend_offers_a_post_quantum_key_share_first() {
+        let groups = rustls_graviola::default_provider().kx_groups;
+        let names: Vec<String> = groups.iter().map(|g| format!("{:?}", g.name())).collect();
+        assert!(
+            names.first().is_some_and(|n| n.contains("MLKEM")),
+            "expected a post-quantum group first, got {names:?}"
+        );
+        // Servers without post-quantum support have to be able to fall back.
+        assert!(names.len() > 1, "expected classical groups behind it, got {names:?}");
     }
 }

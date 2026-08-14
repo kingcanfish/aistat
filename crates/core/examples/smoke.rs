@@ -2,12 +2,19 @@
 //!
 //! ```sh
 //! cargo run -p aistat-core --example smoke
+//! AISTAT_LOG=debug cargo run -p aistat-core --example smoke
 //! ```
 
 use aistat_core::{aggregate, build_client, config::default_sites, fetch_all};
 
 #[tokio::main]
 async fn main() {
+    env_logger::Builder::from_env(
+        env_logger::Env::new().filter_or("AISTAT_LOG", "warn,aistat_core=info"),
+    )
+    .format_timestamp_secs()
+    .init();
+
     let sites = default_sites();
     let statuses = fetch_all(&build_client(), &sites).await;
 

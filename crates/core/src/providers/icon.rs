@@ -143,9 +143,21 @@ fn scan_window(html: &str) -> &str {
 
 /// Fetches `page_url` and resolves its icon to an absolute URL.
 pub async fn fetch_icon_url(client: &reqwest::Client, page_url: &str) -> Option<String> {
-    // Goes through fetch_text so pages that reject Rust's TLS still resolve.
-    let html = super::fetch_text(client, page_url).await.ok()?;
-    absolutize(page_url, &extract_icon_href(scan_window(&html))?)
+    // A missing icon only costs a blank row, so failures log rather than
+    // propagate — but they log, because "why is this row iconless" is
+    // otherwise unanswerable.
+    let html = match super::fetch_text(client, page_url).await {
+        Ok(html) => html,
+        Err(err) => {
+            log::debug!("{page_url}: icon lookup could not fetch the page: {err}");
+            return None;
+        }
+    };
+    let Some(href) = extract_icon_href(scan_window(&html)) else {
+        log::debug!("{page_url}: no <link rel=icon> found in the first {MAX_SCAN} bytes");
+        return None;
+    };
+    absolutize(page_url, &href)
 }
 
 #[cfg(test)]

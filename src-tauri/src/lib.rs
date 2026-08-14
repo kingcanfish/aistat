@@ -10,7 +10,26 @@ use state::AppState;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tray::update_tray;
 
+/// Sends log output to stderr, which is the terminal when the app is started
+/// from one and the unified log otherwise.
+///
+/// Warnings and errors are on by default so a user who reruns the app from a
+/// terminal to find out why a row is stuck on "Unknown" gets an answer without
+/// having to know an env var exists. `AISTAT_LOG` turns the volume up:
+/// `AISTAT_LOG=debug` also traces icon lookups and rustls handshakes.
+fn init_logging() {
+    env_logger::Builder::from_env(
+        // `aistat_lib` rather than `aistat`: log targets are module paths, and
+        // this crate's [lib] name is what lands at the root of ours.
+        env_logger::Env::new().filter_or("AISTAT_LOG", "warn,aistat_lib=info,aistat_core=info"),
+    )
+    .format_timestamp_secs()
+    .init();
+}
+
 pub fn run() {
+    init_logging();
+
     tauri::Builder::default()
         .setup(|app| {
             // A menu bar app lives only in the tray: no Dock icon, and showing
@@ -72,15 +91,40 @@ pub fn run() {
 }
 
 fn load_config(path: &std::path::Path) -> Config {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Config::from_json_or_default(&text),
-        Err(_) => Config::default(),
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        // A missing file is the first run, not a problem worth a warning.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::info!("no config at {}, starting from defaults", path.display());
+            return Config::default();
+        }
+        Err(e) => {
+            log::error!("could not read {}: {e}; starting from defaults", path.display());
+            return Config::default();
+        }
+    };
+
+    // A hand-edited config that fails to parse silently reverts to defaults,
+    // which looks exactly like the app ignoring the file. Say so.
+    match Config::from_json(&text) {
+        Ok(config) => config,
+        Err(e) => {
+            log::error!("{} is not valid config JSON: {e}; starting from defaults", path.display());
+            Config::default()
+        }
     }
 }
 
 fn save_config(state: &AppState) {
-    if let Ok(json) = state.config.lock().unwrap().to_json() {
-        std::fs::write(&state.config_path, json).ok();
+    let json = match state.config.lock().unwrap().to_json() {
+        Ok(json) => json,
+        Err(e) => {
+            log::error!("could not serialize config: {e}");
+            return;
+        }
+    };
+    if let Err(e) = std::fs::write(&state.config_path, json) {
+        log::error!("could not write {}: {e}", state.config_path.display());
     }
 }
 
@@ -94,12 +138,22 @@ async fn refresh_once(app: &AppHandle) {
 
     // Statuses and icons hit different endpoints and don't depend on each
     // other, so they go out together rather than back to back.
+    let started = std::time::Instant::now();
     let (mut statuses, ()) = futures::future::join(
         fetch_all(&client, &config.sites),
         resolve_icons(app, &client, &config.sites),
     )
     .await;
     apply_icons(app, &mut statuses);
+
+    // Per-site failures are logged where they happen; this is the one line
+    // that says a refresh ran at all, and how many sites came back unreadable.
+    let failed = statuses.iter().filter(|s| s.error.is_some()).count();
+    log::info!(
+        "refreshed {} site(s) in {}ms, {failed} failed",
+        statuses.len(),
+        started.elapsed().as_millis()
+    );
 
     let changes = {
         let previous = state.previous.lock().unwrap();
@@ -186,7 +240,9 @@ fn notify(change: &aistat_core::StatusChange) {
             change.new_overall.label()
         )
     };
-    let _ = notify_rust::Notification::new().summary(&summary).body(&body).show();
+    if let Err(e) = notify_rust::Notification::new().summary(&summary).body(&body).show() {
+        log::warn!("could not post a notification for {}: {e}", change.site_name);
+    }
 }
 
 #[tauri::command]
@@ -263,5 +319,8 @@ fn normalize_url(url: &str) -> Result<String, String> {
 /// Hands a URL to the platform's default browser.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    open::that(normalize_url(&url)?).map_err(|e| e.to_string())
+    open::that(normalize_url(&url)?).map_err(|e| {
+        log::warn!("could not open {url} in a browser: {e}");
+        e.to_string()
+    })
 }
