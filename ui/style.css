@@ -28,12 +28,24 @@
      lightened in dark mode, so links stay legible while keeping the hue. */
   --accent-text: color-mix(in srgb, var(--accent) 80%, #000);
 
+  /* Darkened for text and badge fills: these have to clear 4.5:1 against the
+     panel, which costs them most of their saturation. */
   --green: #1a8a52;
   --yellow: #b07d05;
   --orange: #cc6510;
   --red: #c62f2f;
   --blue: #2563eb;
   --gray: #86868b;
+
+  /* The dots are lamps, not text, so they use the system indicator colors
+     instead of the contrast-tuned set above. Reusing the text colors here is
+     what made them read as dimmed. */
+  --dot-green: #34c759;
+  --dot-yellow: #ffcc00;
+  --dot-orange: #ff9500;
+  --dot-red: #ff3b30;
+  --dot-blue: #007aff;
+  --dot-gray: #8e8e93;
 
   --radius-window: 12px;
   --radius-group: 8px;
@@ -64,6 +76,13 @@
     --red: #ff5f57;
     --blue: #5ea1ff;
     --gray: #9ca3af;
+
+    --dot-green: #30d158;
+    --dot-yellow: #ffd60a;
+    --dot-orange: #ff9f0a;
+    --dot-red: #ff453a;
+    --dot-blue: #0a84ff;
+    --dot-gray: #98989d;
   }
 }
 
@@ -264,37 +283,38 @@ body.is-settings #refresh-btn {
    Status dots
    -------------------------------------------------------------------------- */
 
+/* Each modifier only names its colour; the fill and the halo are derived from
+   it here, so the two can never drift apart. */
 .dot {
+  --dot: var(--dot-gray);
   width: 9px;
   height: 9px;
   border-radius: 50%;
   flex: none;
-  background: var(--gray);
-  /* Soft halo, the way native indicator lights read. */
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gray) 18%, transparent);
+  /* The raw system colours read a touch hot at 9px, so every lamp burns at 88%.
+     One number, applied once, rather than six re-picked hex values. */
+  background: color-mix(in srgb, var(--dot) 88%, #000);
+  /* Light spilling off the lamp, the way native indicators read. Driven by the
+     undimmed colour so the glow stays a glow rather than a grey ring. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 28%, transparent);
 }
 .dot--operational {
-  background: var(--green);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent);
+  --dot: var(--dot-green);
 }
 .dot--degraded {
-  background: var(--yellow);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 18%, transparent);
+  --dot: var(--dot-yellow);
 }
 .dot--partial_outage {
-  background: var(--orange);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 18%, transparent);
+  --dot: var(--dot-orange);
 }
 .dot--full_outage {
-  background: var(--red);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
+  --dot: var(--dot-red);
 }
 .dot--maintenance {
-  background: var(--blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+  --dot: var(--dot-blue);
 }
 .dot--unknown {
-  background: var(--gray);
+  --dot: var(--dot-gray);
 }
 
 .dot--sm {
