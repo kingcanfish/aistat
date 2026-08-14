@@ -241,17 +241,23 @@ body.is-settings #refresh-btn {
 }
 
 /* The scroll container is a plain block so its child's natural height can be
-   measured; the window then resizes itself to match. Scrollbars are left
-   entirely to the OS: styling them with ::-webkit-scrollbar would replace the
-   macOS overlay scrollbar with a classic one that takes layout width, which is
-   what made content jump sideways when a list grew tall enough to scroll. */
+   measured; the window then resizes itself to match. The bar itself stays
+   hidden — the panel is short and expanding a row shouldn't paint a scrollbar
+   over the content. A zero-width ::-webkit-scrollbar takes no layout width, so
+   content can't jump sideways when a list grows tall enough to scroll; no
+   gutter is reserved for the same reason. Wheel and trackpad scrolling still
+   work. */
 .scroll {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
   flex: 1;
   min-height: 0;
+}
+.scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* --------------------------------------------------------------------------
