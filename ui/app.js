@@ -11,9 +11,14 @@ const SEVERITY = [
   "unknown",
 ];
 
+/**
+ * One name per status, used everywhere it appears — row, component, header.
+ * Short on purpose: these are set as readouts, and "Degraded performance" spent
+ * a third of a 348px row saying what "Degraded" says.
+ */
 const LABELS = {
   operational: "Operational",
-  degraded: "Degraded performance",
+  degraded: "Degraded",
   partial_outage: "Partial outage",
   full_outage: "Full outage",
   maintenance: "Maintenance",
@@ -51,14 +56,12 @@ function fmtTime(iso) {
     : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-/* ---------- Panel ---------- */
-
-/** Stable per-name hue so a monogram keeps its color across restarts. */
-function hueFor(name) {
-  let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % 360;
-  return hash;
+/** A machine reading: status, count, timestamp, section heading. */
+function readout(className, text) {
+  return el("span", `readout ${className}`, text);
 }
+
+/* ---------- Panel ---------- */
 
 /**
  * The site's own mark. The icon URL is resolved in Rust from the page's
@@ -67,10 +70,7 @@ function hueFor(name) {
  */
 function siteIcon(site) {
   const wrap = el("span", "site-icon");
-
-  const mono = el("span", "site-icon-mono", (site.name.trim()[0] ?? "?").toUpperCase());
-  mono.style.setProperty("--mono-hue", String(hueFor(site.name)));
-  wrap.appendChild(mono);
+  wrap.appendChild(el("span", "site-icon-mono", (site.name.trim()[0] ?? "?").toUpperCase()));
 
   if (site.icon) {
     const img = el("img", "site-icon-img");
@@ -87,14 +87,12 @@ function siteIcon(site) {
 }
 
 function incidentCard(inc) {
-  const card = el("div", "incident");
-  const head = el("div", "incident-head");
-  head.appendChild(dot(inc.impact, true));
-  head.appendChild(el("span", "incident-title", inc.title));
-  card.appendChild(head);
+  // Impact rides the card's rail rather than a dot in the heading.
+  const card = el("div", `incident incident--${inc.impact}`);
+  card.appendChild(el("div", "incident-title", inc.title));
 
   const meta = [inc.lifecycle, fmtTime(inc.updated_at)].filter(Boolean).join(" · ");
-  if (meta) card.appendChild(el("div", "incident-time", meta));
+  if (meta) card.appendChild(readout("incident-time", meta));
   if (inc.latest_update) card.appendChild(el("div", "incident-update", inc.latest_update));
   return card;
 }
@@ -103,19 +101,19 @@ function siteDetail(site) {
   const inner = el("div", "site-detail-inner");
 
   if (site.error) {
-    inner.appendChild(el("div", "site-error", `Couldn't fetch: ${site.error}`));
+    inner.appendChild(el("div", "site-error", `Can't reach this status page. ${site.error}`));
   }
 
   const impaired = (site.components ?? []).filter((c) => c.status !== "operational");
 
   // Incidents first: they're what you opened the panel to read.
   if (site.incidents?.length) {
-    inner.appendChild(el("div", "section-label", "Incidents"));
+    inner.appendChild(readout("section-label", "Incidents"));
     for (const inc of site.incidents) inner.appendChild(incidentCard(inc));
   } else if (impaired.length) {
     // Providers often flip component statuses without filing an incident;
     // say so explicitly instead of leaving the section blank.
-    inner.appendChild(el("div", "section-label", "Incidents"));
+    inner.appendChild(readout("section-label", "Incidents"));
     inner.appendChild(
       el(
         "div",
@@ -128,7 +126,7 @@ function siteDetail(site) {
   }
 
   if (site.components?.length) {
-    inner.appendChild(el("div", "section-label", "Components"));
+    inner.appendChild(readout("section-label", "Components"));
     // Worst first, so problems don't hide at the bottom of a long list.
     const sorted = [...site.components].sort(
       (a, b) => SEVERITY.indexOf(a.status) - SEVERITY.indexOf(b.status)
@@ -139,7 +137,7 @@ function siteDetail(site) {
       const name = el("span", "component-name", c.name);
       name.title = c.name; // long names ellipsize at this width
       row.appendChild(name);
-      row.appendChild(el("span", "site-status", label(c.status)));
+      row.appendChild(readout(`site-status site-status--${c.status}`, label(c.status)));
       inner.appendChild(row);
     }
   }
@@ -160,6 +158,23 @@ function siteDetail(site) {
   return wrap;
 }
 
+/**
+ * An empty panel has one job: get the first site added. The title bar already
+ * says nothing is being monitored, so this doesn't say it twice — it just gives
+ * you the way out.
+ */
+function emptyState() {
+  const li = el("li", "empty-state");
+  li.appendChild(el("div", "empty-body", "Add a status page and AIStat will keep an eye on it."));
+  const add = el("button", "btn btn--primary", "Add site");
+  add.addEventListener("click", async () => {
+    await openSettings();
+    document.getElementById("add-site-btn").click();
+  });
+  li.appendChild(add);
+  return li;
+}
+
 function renderPanel(statuses) {
   const list = document.getElementById("site-list");
   // Remember which rows were expanded so a background refresh doesn't collapse them.
@@ -167,7 +182,7 @@ function renderPanel(statuses) {
   list.replaceChildren();
 
   if (!statuses?.length) {
-    list.appendChild(el("li", "empty-state", "No sites configured."));
+    list.appendChild(emptyState());
     return;
   }
 
@@ -177,8 +192,10 @@ function renderPanel(statuses) {
     if (open.has(site.id)) li.classList.add("is-open");
 
     const row = el("div", "site-row");
-    row.appendChild(siteIcon(site));
+    // Lamp first: down a list of sites the lamps line up into a single column
+    // you can read without reading any of the names.
     row.appendChild(dot(site.overall));
+    row.appendChild(siteIcon(site));
     row.appendChild(el("span", "site-name", site.name));
 
     // Surface that there is something to read without expanding the row.
@@ -186,14 +203,14 @@ function renderPanel(statuses) {
     const impaired = (site.components ?? []).filter((c) => c.status !== "operational").length;
     if (incidents || impaired) {
       const count = incidents || impaired;
-      const chip = el("span", `site-chip site-chip--${site.overall}`, String(count));
+      const chip = readout(`site-chip site-chip--${site.overall}`, String(count));
       chip.title = incidents
         ? `${incidents} open incident${incidents === 1 ? "" : "s"}`
         : `${impaired} component${impaired === 1 ? "" : "s"} affected`;
       row.appendChild(chip);
     }
 
-    row.appendChild(el("span", "site-status", label(site.overall)));
+    row.appendChild(readout(`site-status site-status--${site.overall}`, label(site.overall)));
     const chevron = icon("i-chevron");
     chevron.classList.add("site-chevron");
     row.appendChild(chevron);
@@ -205,6 +222,25 @@ function renderPanel(statuses) {
   }
 }
 
+/**
+ * The one line the panel exists to show. It names the service, not just the
+ * state: "Partial outage at Claude" is the answer to the question you opened
+ * the panel with, where "Partial outage" is only half of it.
+ */
+function aggSentence(worst, statuses) {
+  if (worst === "operational") return "All systems operational";
+  // Nothing came back from anywhere; there's no service to name.
+  if (worst === "unknown") return "Status unknown";
+
+  // Named site is one at the worst level — that's the one the sentence is
+  // about — and the count covers everything else that isn't operational.
+  const named = statuses.find((s) => s.overall === worst);
+  const others = statuses.filter((s) => s !== named && s.overall !== "operational").length;
+  return others
+    ? `${label(worst)} at ${named.name} and ${others} more`
+    : `${label(worst)} at ${named.name}`;
+}
+
 function renderHeader(statuses) {
   const aggDot = document.getElementById("agg-dot");
   const aggText = document.getElementById("agg-text");
@@ -212,14 +248,17 @@ function renderHeader(statuses) {
 
   if (!statuses?.length) {
     aggDot.className = "dot dot--unknown";
-    aggText.textContent = "No sites";
+    document.body.dataset.agg = "unknown";
+    aggText.textContent = "Nothing monitored";
     lastUpdated.textContent = "";
     return;
   }
 
   const worst = SEVERITY.find((s) => statuses.some((x) => x.overall === s)) ?? "unknown";
   aggDot.className = `dot dot--${worst}`;
-  aggText.textContent = worst === "operational" ? "All systems operational" : label(worst);
+  // Drives the wash across the title bar and whether the lamp breathes.
+  document.body.dataset.agg = worst;
+  aggText.textContent = aggSentence(worst, statuses);
 
   const latest = statuses.map((s) => s.fetched_at).filter(Boolean).sort().at(-1);
   lastUpdated.textContent = latest ? `Updated ${fmtTime(latest)}` : "";
@@ -327,7 +366,7 @@ function siteConfigRow(site) {
   nameInput.value = site.name;
   item.appendChild(nameInput);
 
-  const badge = el("span", "adapter-badge", site.adapter ?? "");
+  const badge = readout("adapter-badge", site.adapter ?? "");
   item.appendChild(badge);
 
   const remove = el("button", "remove-btn");
@@ -377,7 +416,18 @@ function setSettingsDirty(dirty) {
   invoke("set_panel_pinned", { pinned: dirty });
 }
 
+const settingsBtn = document.getElementById("settings-btn");
+
+/** Keeps the toolbar button describing what pressing it will now do. */
+function markSettingsOpen(open) {
+  settingsBtn.setAttribute("aria-pressed", String(open));
+  const title = open ? "Close settings" : "Settings";
+  settingsBtn.title = title;
+  settingsBtn.setAttribute("aria-label", title);
+}
+
 async function openSettings() {
+  if (!settingsView.classList.contains("hidden")) return;
   editingConfig = await invoke("get_config");
   document.getElementById("interval-input").value = editingConfig.refresh_interval_seconds;
   document.getElementById("notify-input").checked = editingConfig.notifications_enabled;
@@ -386,6 +436,7 @@ async function openSettings() {
   settingsView.classList.remove("hidden");
   document.body.classList.add("is-settings");
   document.getElementById("agg-text").textContent = "Settings";
+  markSettingsOpen(true);
   setSettingsDirty(false);
   syncPanelHeight();
 }
@@ -469,6 +520,7 @@ function closeSettings({ immediate = false } = {}) {
   settingsView.classList.add("hidden");
   document.getElementById("panel-view").classList.remove("hidden");
   document.body.classList.remove("is-settings");
+  markSettingsOpen(false);
   setSettingsDirty(false);
   load();
   if (immediate) flushPanelHeight();
@@ -478,7 +530,14 @@ function closeSettings({ immediate = false } = {}) {
 /* ---------- Wiring ---------- */
 
 refreshBtn.addEventListener("click", refresh);
-document.getElementById("settings-btn").addEventListener("click", openSettings);
+
+// One button, one position, both directions: from the list it opens settings,
+// and from settings it is the way back — same as Cancel, which is what the
+// header button has always meant to anyone who pressed it a second time.
+settingsBtn.addEventListener("click", () => {
+  if (settingsView.classList.contains("hidden")) openSettings();
+  else closeSettings();
+});
 saveBtn.addEventListener("click", saveSettings);
 document.getElementById("cancel-btn").addEventListener("click", closeSettings);
 document.getElementById("add-site-btn").addEventListener("click", () => {

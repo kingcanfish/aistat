@@ -38,15 +38,21 @@
       <div class="titlebar-main">
         <span id="agg-dot" class="dot dot--unknown"></span>
         <div class="titlebar-text">
-          <span id="agg-text" class="titlebar-title">Loading…</span>
-          <span id="last-updated" class="titlebar-subtitle"></span>
+          <span id="agg-text" class="titlebar-title">Checking…</span>
+          <span id="last-updated" class="titlebar-subtitle readout"></span>
         </div>
       </div>
       <div class="titlebar-actions">
         <button id="refresh-btn" class="icon-btn" title="Refresh now" aria-label="Refresh now">
           <svg class="icon"><use href="#i-refresh" /></svg>
         </button>
-        <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">
+        <button
+          id="settings-btn"
+          class="icon-btn"
+          title="Settings"
+          aria-label="Settings"
+          aria-pressed="false"
+        >
           <svg class="icon"><use href="#i-settings" /></svg>
         </button>
       </div>
@@ -61,13 +67,13 @@
     <section id="settings-view" class="view settings-view hidden">
       <div class="scroll settings-scroll">
         <div id="settings-inner" class="settings-inner">
-        <h2 class="group-label">General</h2>
+        <h2 class="group-label readout">General</h2>
         <div class="group">
           <div class="form-row">
-            <label for="interval-input">Refresh interval</label>
+            <label for="interval-input">Check every</label>
             <div class="stepper">
               <input id="interval-input" type="number" min="30" step="30" />
-              <span class="stepper-unit">sec</span>
+              <span class="stepper-unit readout">sec</span>
             </div>
           </div>
           <div class="form-row">
@@ -79,7 +85,7 @@
           </div>
         </div>
 
-        <h2 class="group-label">Sites</h2>
+        <h2 class="group-label readout">Sites</h2>
         <div class="group">
           <ul id="site-config-list" class="site-config-list"></ul>
           <button id="add-site-btn" class="row-btn">
