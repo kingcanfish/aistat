@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "aistat"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aistat-core",
  "env_logger",
@@ -36,7 +36,7 @@ dependencies = [
 
 [[package]]
 name = "aistat-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "env_logger",
