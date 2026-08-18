@@ -56,8 +56,22 @@ updated = re.sub(r'(version\s*=\s*)"[^"]+"', rf'\1"{version}"', block, count=1)
 path.write_text(text[:start] + updated + text[end:])
 PY
 
-# Refresh Cargo.lock so the recorded package versions match.
-cargo metadata --no-deps --format-version 1 >/dev/null
+# Refresh Cargo.lock so the recorded package versions match. `--no-deps` is
+# what this used to pass, and it looks like it would do the job — but it skips
+# resolution entirely and so never rewrites the lock, which is how v0.1.2 came
+# to be tagged with a lock still claiming the old version. `--workspace` here
+# rewrites the two member versions and leaves every dependency pinned where it
+# is; nothing else in the lock moves.
+cargo update --workspace --quiet
+
+# CI builds every job with --locked, where a lock that disagrees with
+# Cargo.toml is a hard error, not a silent update. Assert the same thing the
+# runners will so a stale lock fails here — one command, before the tag exists
+# — instead of five platforms in, twenty minutes later.
+if ! cargo metadata --locked --format-version 1 >/dev/null; then
+  echo "error: Cargo.lock is stale for $VERSION; CI builds with --locked and would fail." >&2
+  exit 1
+fi
 
 git add Cargo.toml Cargo.lock
 # Re-releasing the version already in Cargo.toml stages nothing, and an empty
