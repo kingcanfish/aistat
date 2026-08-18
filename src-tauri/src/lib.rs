@@ -84,7 +84,8 @@ pub fn run() {
             open_url,
             set_panel_pinned,
             detect_adapter,
-            resize_panel
+            resize_panel,
+            app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running aistat");
@@ -314,6 +315,13 @@ fn normalize_url(url: &str) -> Result<String, String> {
     } else {
         Ok(format!("https://{url}"))
     }
+}
+
+/// The bundled version, so the settings footer can show what is running
+/// without the UI keeping its own copy of the number to fall out of date.
+#[tauri::command]
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
 }
 
 /// Hands a URL to the platform's default browser.

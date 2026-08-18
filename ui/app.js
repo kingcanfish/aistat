@@ -27,6 +27,9 @@ const LABELS = {
 
 const label = (status) => LABELS[status] ?? status.replace(/_/g, " ");
 
+/** Where the GitHub mark in the settings footer goes. */
+const REPO_URL = "https://github.com/kingcanfish/aistat";
+
 function icon(id) {
   const span = document.createElement("span");
   span.innerHTML = `<svg class="icon"><use href="#${id}"/></svg>`;
@@ -569,6 +572,18 @@ window.addEventListener("blur", () => {
   if (settingsDirty) return;
   if (!settingsView.classList.contains("hidden")) closeSettings({ immediate: true });
 });
+
+// The footer signature: version from Rust so it tracks the crate, GitHub mark
+// straight to the project.
+document.getElementById("about-btn").addEventListener("click", () => {
+  invoke("open_url", { url: REPO_URL }).catch((err) => console.error("open_url", err));
+});
+
+invoke("app_version")
+  .then((v) => {
+    document.getElementById("version-text").textContent = `v${v}`;
+  })
+  .catch((err) => console.error("app_version", err));
 
 listen("status-updated", (event) => render(event.payload));
 listen("open-settings", () => openSettings());

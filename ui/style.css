@@ -189,6 +189,13 @@ body {
   stroke-linejoin: round;
 }
 
+/* Brand marks come as filled glyphs; drawing them with the panel's stroke
+   would fur the edges of shapes that were never line art. */
+.icon--solid {
+  fill: currentColor;
+  stroke: none;
+}
+
 /* --------------------------------------------------------------------------
    Readouts
    Every machine reading in the panel — a status, a count, a timestamp, a
@@ -969,11 +976,56 @@ input::placeholder {
 /* Footer buttons */
 .settings-footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 11px 14px;
   border-top: 0.5px solid var(--separator);
   flex: none;
+}
+
+.settings-footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Corner-of-the-window signature: which build you are running, and where it
+   came from. Quiet by default so it never competes with Save, and it reads as
+   a link only once the pointer is on it. */
+.about-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease;
+}
+.about-btn:hover {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+.about-btn:active {
+  background: var(--fill-active);
+}
+.about-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.about-btn .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* The one readout that stays lower case: a version is written "v0.1.2"
+   everywhere else it appears — tags, release titles, the cask — and upper
+   casing it here would be the only place it isn't. */
+.about-btn .readout {
+  text-transform: none;
 }
 
 .btn {
