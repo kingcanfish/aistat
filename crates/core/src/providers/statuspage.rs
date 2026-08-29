@@ -242,11 +242,26 @@ mod tests {
 
     #[test]
     fn maps_all_component_statuses() {
-        assert_eq!(statuspage_component_status("operational"), Status::Operational);
-        assert_eq!(statuspage_component_status("degraded_performance"), Status::Degraded);
-        assert_eq!(statuspage_component_status("partial_outage"), Status::PartialOutage);
-        assert_eq!(statuspage_component_status("major_outage"), Status::FullOutage);
-        assert_eq!(statuspage_component_status("under_maintenance"), Status::Maintenance);
+        assert_eq!(
+            statuspage_component_status("operational"),
+            Status::Operational
+        );
+        assert_eq!(
+            statuspage_component_status("degraded_performance"),
+            Status::Degraded
+        );
+        assert_eq!(
+            statuspage_component_status("partial_outage"),
+            Status::PartialOutage
+        );
+        assert_eq!(
+            statuspage_component_status("major_outage"),
+            Status::FullOutage
+        );
+        assert_eq!(
+            statuspage_component_status("under_maintenance"),
+            Status::Maintenance
+        );
         assert_eq!(statuspage_component_status("bogus"), Status::Unknown);
     }
 

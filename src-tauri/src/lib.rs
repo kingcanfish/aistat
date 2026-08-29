@@ -1,3 +1,4 @@
+mod appearance;
 mod state;
 mod tray;
 
@@ -65,9 +66,9 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // Native menu bar panels dismiss as soon as they lose focus.
-            if let WindowEvent::Focused(false) = event {
+            WindowEvent::Focused(false) => {
                 let app = window.app_handle();
                 let pinned = *app.state::<AppState>().pinned.lock().unwrap();
                 if window.label() == "main" && !pinned {
@@ -75,6 +76,17 @@ pub fn run() {
                     tray::note_panel_hidden(app);
                 }
             }
+            // The icon is drawn in the menu bar's own label colour, so it has
+            // to be redrawn when the user switches appearance — nothing else
+            // repaints it, and a stale icon is a black glyph on a black bar.
+            WindowEvent::ThemeChanged(_) => {
+                let app = window.app_handle();
+                let state = app.state::<AppState>();
+                let statuses = state.statuses.lock().unwrap().clone();
+                let config = state.config.lock().unwrap().clone();
+                update_tray(app, &statuses, &config);
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_statuses,
@@ -100,7 +112,10 @@ fn load_config(path: &std::path::Path) -> Config {
             return Config::default();
         }
         Err(e) => {
-            log::error!("could not read {}: {e}; starting from defaults", path.display());
+            log::error!(
+                "could not read {}: {e}; starting from defaults",
+                path.display()
+            );
             return Config::default();
         }
     };
@@ -110,7 +125,10 @@ fn load_config(path: &std::path::Path) -> Config {
     match Config::from_json(&text) {
         Ok(config) => config,
         Err(e) => {
-            log::error!("{} is not valid config JSON: {e}; starting from defaults", path.display());
+            log::error!(
+                "{} is not valid config JSON: {e}; starting from defaults",
+                path.display()
+            );
             Config::default()
         }
     }
@@ -163,10 +181,7 @@ async fn refresh_once(app: &AppHandle) {
 
     {
         let mut previous = state.previous.lock().unwrap();
-        *previous = statuses
-            .iter()
-            .map(|s| (s.id.clone(), s.clone()))
-            .collect();
+        *previous = statuses.iter().map(|s| (s.id.clone(), s.clone())).collect();
     }
     *state.statuses.lock().unwrap() = statuses.clone();
 
@@ -201,13 +216,18 @@ async fn resolve_icons(app: &AppHandle, client: &HttpClient, sites: &[SiteConfig
         return;
     }
 
-    let resolved = futures::future::join_all(unresolved.into_iter().map(|url: String| async move {
-        let icon = aistat_core::providers::icon::fetch_icon_url(client, &url).await;
-        (url, icon)
-    }))
-    .await;
+    let resolved =
+        futures::future::join_all(unresolved.into_iter().map(|url: String| async move {
+            let icon = aistat_core::providers::icon::fetch_icon_url(client, &url).await;
+            (url, icon)
+        }))
+        .await;
 
-    app.state::<AppState>().icons.lock().unwrap().extend(resolved);
+    app.state::<AppState>()
+        .icons
+        .lock()
+        .unwrap()
+        .extend(resolved);
 }
 
 fn apply_icons(app: &AppHandle, statuses: &mut [SiteStatus]) {
@@ -222,7 +242,12 @@ async fn spawn_scheduler(app: AppHandle) {
     loop {
         let interval = {
             let state = app.state::<AppState>();
-            let seconds = state.config.lock().unwrap().refresh_interval_seconds.max(30);
+            let seconds = state
+                .config
+                .lock()
+                .unwrap()
+                .refresh_interval_seconds
+                .max(30);
             seconds
         };
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
@@ -241,8 +266,15 @@ fn notify(change: &aistat_core::StatusChange) {
             change.new_overall.label()
         )
     };
-    if let Err(e) = notify_rust::Notification::new().summary(&summary).body(&body).show() {
-        log::warn!("could not post a notification for {}: {e}", change.site_name);
+    if let Err(e) = notify_rust::Notification::new()
+        .summary(&summary)
+        .body(&body)
+        .show()
+    {
+        log::warn!(
+            "could not post a notification for {}: {e}",
+            change.site_name
+        );
     }
 }
 

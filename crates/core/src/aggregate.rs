@@ -22,7 +22,10 @@ mod tests {
     fn aggregate_picks_most_severe() {
         let p = Status::DEFAULT_PRIORITY.to_vec();
         assert_eq!(aggregate([Operational, Degraded], &p), Degraded);
-        assert_eq!(aggregate([Operational, FullOutage, Degraded], &p), FullOutage);
+        assert_eq!(
+            aggregate([Operational, FullOutage, Degraded], &p),
+            FullOutage
+        );
         assert_eq!(aggregate([Operational, Operational], &p), Operational);
     }
 

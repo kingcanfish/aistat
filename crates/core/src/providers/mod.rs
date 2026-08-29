@@ -50,7 +50,10 @@ pub enum ProviderError {
 fn install_tls_backend() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        if rustls_graviola::default_provider().install_default().is_err() {
+        if rustls_graviola::default_provider()
+            .install_default()
+            .is_err()
+        {
             log::warn!("a TLS backend was already installed; leaving it alone");
         }
     });
@@ -87,7 +90,10 @@ pub async fn fetch_json<T: DeserializeOwned>(
     serde_json::from_str(&body).map_err(|e| {
         // The body is the only way to tell "this isn't a status API" from "the
         // schema moved", and it's the one thing the error itself never carries.
-        log::warn!("{url}: response was not the expected JSON: {e}; body starts: {:.200}", body);
+        log::warn!(
+            "{url}: response was not the expected JSON: {e}; body starts: {:.200}",
+            body
+        );
         ProviderError::Parse(e.to_string())
     })
 }
@@ -210,6 +216,9 @@ mod tests {
             "expected a post-quantum group first, got {names:?}"
         );
         // Servers without post-quantum support have to be able to fall back.
-        assert!(names.len() > 1, "expected classical groups behind it, got {names:?}");
+        assert!(
+            names.len() > 1,
+            "expected classical groups behind it, got {names:?}"
+        );
     }
 }

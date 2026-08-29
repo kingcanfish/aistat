@@ -21,7 +21,11 @@ async fn main() {
     let priority = aistat_core::Status::DEFAULT_PRIORITY.to_vec();
     let overall = aggregate(statuses.iter().map(|s| s.overall), &priority);
 
-    println!("aggregate overall: {} ({})", overall.label(), overall.color());
+    println!(
+        "aggregate overall: {} ({})",
+        overall.label(),
+        overall.color()
+    );
     println!();
 
     for s in &statuses {

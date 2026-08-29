@@ -11,12 +11,16 @@ pub fn extract_icon_href(html: &str) -> Option<String> {
     let mut best: Option<String> = None;
 
     for tag in link_tags(html) {
-        let Some(rel) = attr(&tag, "rel") else { continue };
+        let Some(rel) = attr(&tag, "rel") else {
+            continue;
+        };
         let rel = rel.to_ascii_lowercase();
         if !rel.contains("icon") {
             continue;
         }
-        let Some(href) = attr(&tag, "href") else { continue };
+        let Some(href) = attr(&tag, "href") else {
+            continue;
+        };
         if href.trim().is_empty() {
             continue;
         }
@@ -177,7 +181,8 @@ mod tests {
 
     #[test]
     fn finds_an_absolute_flashduty_icon() {
-        let html = r#"<link rel="icon" href="https://static.flashcat.cloud/statuspage/favicon.png"/>"#;
+        let html =
+            r#"<link rel="icon" href="https://static.flashcat.cloud/statuspage/favicon.png"/>"#;
         assert_eq!(
             extract_icon_href(html).unwrap(),
             "https://static.flashcat.cloud/statuspage/favicon.png"
@@ -225,7 +230,8 @@ mod tests {
 
     #[test]
     fn decodes_escaped_query_parameters() {
-        let html = r#"<link rel="icon" href="/_next/image?url=https%3A%2F%2Fx.png&amp;w=96&amp;q=100"/>"#;
+        let html =
+            r#"<link rel="icon" href="/_next/image?url=https%3A%2F%2Fx.png&amp;w=96&amp;q=100"/>"#;
         let href = extract_icon_href(html).unwrap();
         assert_eq!(
             absolutize("https://status.openai.com", &href).unwrap(),

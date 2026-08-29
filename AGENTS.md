@@ -14,7 +14,7 @@ install and the release secrets; this file covers what you need to change code.
 ## Commands
 
 ```sh
-cargo test --workspace                          # 47 tests: 35 in aistat-core, 12 in src-tauri (tray geometry + icon raster)
+cargo test --workspace                          # 53 tests: 35 in aistat-core, 18 in src-tauri (tray geometry + icon raster)
 cargo test -p aistat-core                       # core only — this is all CI runs
 cargo test -p aistat --lib                      # tray tests only; they need no display
 cargo test -p aistat-core aggregate_picks_most  # single test by substring
@@ -51,7 +51,7 @@ Three layers, in dependency order:
   Never reach for `tauri` from this crate.
 - **`src-tauri/`** — the shell. `lib.rs` owns the refresh loop, IPC commands and
   notifications; `tray.rs` owns the tray icon (drawn procedurally, see below) and
-  all panel geometry (and carries 12 tests of its own for the icon raster and
+  all panel geometry (and carries 18 tests of its own for the icon raster and
   panel placement); `state.rs` is the shared `AppState`.
 - **`ui/`** — three static files. `app.js` talks to Rust via `window.__TAURI__`
   (`withGlobalTauri: true`), no bundler, no modules.
@@ -71,12 +71,21 @@ panel should go through it rather than mutating state directly.
 **The status vocabulary is duplicated in four places.** Adding or renaming a
 `Status` variant means touching all of them:
 1. `crates/core/src/model.rs` — the enum, `DEFAULT_PRIORITY`, `label()`, `color()`
-2. `src-tauri/src/tray.rs` — `status_rgb` (the tray icon tint)
+2. `src-tauri/src/tray.rs` — `status_rgb` (the tray icon tint; **two** arms per
+   status, one per menu bar appearance) and `weight_for` (which weight the
+   escalating icon style gives it)
 3. `ui/app.js` — `SEVERITY` and `LABELS` (the JS copy of the priority order)
 4. `ui/style.css` — the `.dot--<status>` classes
 
 Serde uses `snake_case`, so the JSON wire values (`partial_outage`, `full_outage`)
 are what the JS sees.
+
+**A new `Config` field is declared four times**: the struct and its `Default`
+(`crates/core/src/config.rs`), the row in `ui/index.html`, and both halves of
+the round trip in `ui/app.js` (`openSettings` fills the control, `saveSettings`
+reads it back). Miss the `saveSettings` half and the setting silently reverts
+on every save. Every field carries `#[serde(default)]` so an older config file
+still loads.
 
 **IPC commands are declared twice**: in `invoke_handler![...]` in `lib.rs` and at
 each `invoke("name", ...)` call site in `ui/app.js`. Argument names are camelCase
@@ -139,9 +148,77 @@ Height is content-driven in the other direction from usual: JS measures the visi
 view under a `ResizeObserver` and calls `resize_panel`, which clamps between
 `PANEL_MIN_HEIGHT`/`PANEL_MAX_HEIGHT` and repositions against the monitor.
 
-The tray icon is rasterized in Rust, not loaded from a file — `robot_mask` is a
-signed-distance-ish silhouette sampled with 4×4 supersampling into a 36px RGBA
-image tinted by the aggregate status.
+The tray icon is rasterized in Rust, not loaded from a file. The geometry is
+written in **icon points** (an 18pt box, the height macOS draws a status item)
+and rasterized at 2px per point into 36px RGBA with 4×4 supersampling.
+`RoundRect::distance` is a real signed distance field rather than a
+containment test, because two of the three weights *stroke* the head and a
+stroke is just the band where |distance| is within half the pen.
+
+`Config::icon_style` picks one of three renderings (`weight_for`):
+
+- **Calm** — monochrome glyph in the menu bar's label colour, status in a
+  corner lamp punched out of the outline.
+- **Tinted** — the glyph itself in the status colour, on a 1.6pt pen (coloured
+  ink at mid luminance reads thinner than black on white).
+- **Filled** — the calm shapes with the head inked in, eyes knocked out.
+
+`IconStyle::Escalating` (the default) maps severity onto those three; `Lamp`
+and `Tinted` pin every status to one. Two invariants have tests and are easy
+to break: the lamp sits **inside** the head's outer edge and the filled weight
+reuses the calm shapes, so the mark's bounding box does not move when the
+status changes; and nothing reaches the bitmap edge, since there is no longer
+a keyline to hide clipping.
+
+### The menu bar's appearance is not the system appearance
+
+`src-tauri/src/appearance.rs` exists because of one macOS fact that is easy to
+get wrong and was shipped wrong here once: the menu bar is translucent over the
+desktop picture, and AppKit picks its *content* appearance from what is behind
+it. A Mac in **Light** appearance with a dark wallpaper gets a **dark** menu
+bar, with every template icon in it drawn white. Verified on this machine:
+`defaults read -g AppleInterfaceStyle` is unset (Light) while the bar renders
+its icons white.
+
+So `AppleInterfaceStyle`, `NSApp.effectiveAppearance` and Tauri's
+`Window::theme()` are all the wrong question — they say Light and you paint a
+black glyph onto a black bar. The supported answer is the status item's own
+`button.effectiveAppearance`. Tauri does not expose its status item, so
+`appearance.rs` keeps a **zero-length `NSStatusItem` of its own** (public API,
+no visible footprint, same value the real item sees), observes that button's
+appearance with **KVO**, and caches the answer in an atomic — AppKit only
+answers on the main thread, while the refresh loop draws from a worker.
+
+Three things follow, and all three have comments guarding them:
+
+- **Registration must happen outside the `RefCell` borrow.** `Initial` makes
+  `addObserver:` deliver the first callback *synchronously*, and that callback
+  reads the probe straight back. Registering while still inside
+  `borrow_mut()` panics with "RefCell already borrowed" inside an `extern "C"`
+  frame that cannot unwind — which aborts the app on launch (SIGABRT). So
+  `ensure_observed` creates and stores the probe under a short mutable borrow,
+  drops it, *then* registers. `read` takes a shared borrow for the same reason.
+- **The probe cannot be read at setup.** Its button reports the *app*
+  appearance until AppKit installs it in the bar, which has not happened inside
+  the setup hook or a run loop turn later — measured. KVO is what makes this
+  work: that installation is itself a change, delivered about a second in, well
+  before the first network refresh.
+- **Nothing else would notify you.** Changing the desktop picture flips the bar
+  with no theme change and no user action, so KVO is the only mechanism that
+  sees it. `update_tray` still calls `resync_appearance` as belt and braces in
+  case the registration never took; it costs one string read per refresh and
+  redraws only when the answer moved.
+
+This is also the honest answer to "would a Swift rewrite avoid this?" — no. A
+native app gets its own `statusItem.button` instead of a probe, but it observes
+the same key path for the same reason.
+
+Apple's own advice is to sidestep all of this with a template image, which the
+system tints for free — that is what `IconStyle` cannot use, because a template
+image keeps nothing but the alpha channel and the status colour has to survive.
+A palette pinned to one luminance so it needs no appearance at all was tried and
+rejected: it is muddy on a dark bar, and costs more in colour than the observer
+costs in code.
 
 Icons for site rows are scraped from each page's `<link rel=icon>` and cached in
 `AppState.icons` as `HashMap<url, Option<String>>`; `Some(None)` means "checked,

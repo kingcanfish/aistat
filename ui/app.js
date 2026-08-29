@@ -434,6 +434,7 @@ async function openSettings() {
   editingConfig = await invoke("get_config");
   document.getElementById("interval-input").value = editingConfig.refresh_interval_seconds;
   document.getElementById("notify-input").checked = editingConfig.notifications_enabled;
+  document.getElementById("icon-style-input").value = editingConfig.icon_style;
   renderSiteConfig(editingConfig.sites);
   document.getElementById("panel-view").classList.add("hidden");
   settingsView.classList.remove("hidden");
@@ -510,6 +511,7 @@ async function saveSettings() {
       parseInt(document.getElementById("interval-input").value, 10) || 300
     );
     editingConfig.notifications_enabled = document.getElementById("notify-input").checked;
+    editingConfig.icon_style = document.getElementById("icon-style-input").value;
     editingConfig.sites = collectSites();
     await invoke("set_config", { config: editingConfig });
     closeSettings();

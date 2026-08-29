@@ -4,3 +4,8 @@ dist/
 *.log
 .DS_Store
 src-tauri/gen/
+
+# Design working files for the menu bar icon: .dc.html artboards, the
+# generators that emit them, and the seeded canvas. Scratch input for a
+# published Artifact, not part of the build.
+.design/

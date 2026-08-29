@@ -12,7 +12,9 @@ pub mod providers;
 pub mod snapshot;
 
 pub use aggregate::aggregate;
-pub use config::{AdapterKind, Config, SiteConfig};
+pub use config::{AdapterKind, Config, IconStyle, SiteConfig};
 pub use model::{Component, Incident, SiteStatus, Status};
-pub use providers::{build_client, detect_adapter, fetch_all, fetch_site, HttpClient, ProviderError};
+pub use providers::{
+    build_client, detect_adapter, fetch_all, fetch_site, HttpClient, ProviderError,
+};
 pub use snapshot::{detect_changes, StatusChange};

@@ -25,3 +25,25 @@ log = "0.4"
 # Default features pull in colour detection and regex filtering we don't need;
 # `humantime` keeps a readable timestamp on each line.
 env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
+
+# Read the menu bar's own appearance, which is not the system appearance —
+# see `src/appearance.rs`. Both are already in the tree via `tray-icon`.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSDictionary",
+  "NSKeyValueObserving",
+  "NSString",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSAppearance",
+  "NSButton",
+  "NSControl",
+  "NSResponder",
+  "NSStatusBar",
+  "NSStatusBarButton",
+  "NSStatusItem",
+  "NSView",
+] }

@@ -142,7 +142,11 @@ fn components_from(events: &[Event]) -> Vec<Component> {
             }
             out.push(Component {
                 name,
-                status: c.status.as_deref().map(flashduty_status).unwrap_or(Status::Unknown),
+                status: c
+                    .status
+                    .as_deref()
+                    .map(flashduty_status)
+                    .unwrap_or(Status::Unknown),
             });
         }
     }
@@ -328,7 +332,10 @@ mod tests {
             "in_progress_maintenances": [{"id":"m1","title":"Upgrade","phase":"ongoing"}]
         }"#;
         let w: WidgetSummary = serde_json::from_str(json).unwrap();
-        assert_eq!(summary_to_status(&site(), w).unwrap().overall, Status::FullOutage);
+        assert_eq!(
+            summary_to_status(&site(), w).unwrap().overall,
+            Status::FullOutage
+        );
     }
 
     #[test]
