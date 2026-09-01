@@ -38,6 +38,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // Before anything can post one. See the function's comment: the
+            // cost of not doing this lands on the user, not on us.
+            claim_notification_identity();
+
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir).ok();
             let config_path = config_dir.join("config.json");
@@ -254,6 +258,43 @@ async fn spawn_scheduler(app: AppHandle) {
         refresh_once(&app).await;
     }
 }
+
+/// Names the app macOS should attribute notifications to, before
+/// `notify-rust` goes looking for one by itself.
+///
+/// `NSUserNotificationCenter` will not post on behalf of a process with no
+/// registered bundle identifier, so notify-rust borrows one. If we have not
+/// named it by the first `show()`, it falls back to
+/// `get_bundle_identifier_or_default("use_default")` — which runs the
+/// AppleScript `get id of application "use_default"`. There is no such
+/// application, so Launch Services asks the *user* where it is: the "Choose
+/// Application" picker opens over whatever they were doing, at the one moment
+/// a site changed status. Claiming the identifier here spends the crate's
+/// one-shot `Once` so that lookup can never run.
+///
+/// Only an identifier Launch Services already knows is accepted, and a loose
+/// binary (`cargo tauri dev` runs one, not a bundle) has none; that case falls
+/// back to the same `com.apple.Finder` the crate would have settled on. Either
+/// way the `Once` is spent, which is the half that matters.
+#[cfg(target_os = "macos")]
+fn claim_notification_identity() {
+    // Nil for a loose binary. Asked now because `set_application` swizzles
+    // this very method to return the identifier it was handed.
+    let identifier = objc2_foundation::NSBundle::mainBundle()
+        .bundleIdentifier()
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "com.apple.Finder".to_string());
+
+    match notify_rust::set_application(&identifier) {
+        Ok(()) => log::info!("notifications will be posted as {identifier}"),
+        // Not fatal: the picker is gone either way, and a notification that
+        // does not appear is a smaller problem than one that interrupts.
+        Err(e) => log::warn!("could not post notifications as {identifier}: {e}"),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn claim_notification_identity() {}
 
 fn notify(change: &aistat_core::StatusChange) {
     let summary = format!("{} — {}", change.site_name, change.new_overall.label());

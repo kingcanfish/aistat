@@ -32,6 +32,9 @@ env_logger = { version = "0.11", default-features = false, features = ["humantim
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",
+  # `NSBundle` is not for the appearance probe: it answers whether we are
+  # running from a real bundle, which decides the notification identity.
+  "NSBundle",
   "NSDictionary",
   "NSKeyValueObserving",
   "NSString",

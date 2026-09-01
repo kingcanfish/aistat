@@ -130,6 +130,18 @@ Per-site failures never fail a batch: `fetch_all` turns them into
 `SiteStatus::from_error` with `Status::Unknown` and an `error` string that the panel
 row shows verbatim, which is why `ProviderError::Http` renders its whole source chain.
 
+### Notifications
+
+`claim_notification_identity` runs in the setup hook and must stay there.
+`notify-rust`'s macOS backend needs a Launch Services–registered bundle
+identifier to post at all, and if nothing has named one by the first `show()`
+it runs the AppleScript `get id of application "use_default"` — which opens the
+system "Choose Application" picker in the user's face, at the moment a site
+changed status. Claiming the identifier up front spends the crate's one-shot
+`Once` so that lookup never happens; a loose dev binary has no identifier and
+falls back to `com.apple.Finder`, which is fine because spending the `Once` is
+the part that matters.
+
 ### Panel behavior (tray.rs + app.js)
 
 The window is a frameless, transparent, always-on-top popover that is hidden by
