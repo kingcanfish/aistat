@@ -6,10 +6,18 @@ file, so this is the single file to edit.
 
 ## What this is
 
-AIStat is a Tauri 2 menu bar / status bar app that polls AI service status pages
+AIStat is a menu bar / status bar app that polls AI service status pages
 (status.claude.com, status.openai.com, status.deepseek.com by default) and shows
 the aggregate worst status as a tray icon. README.md covers user-facing features,
 install and the release secrets; this file covers what you need to change code.
+
+**There are two shells over the same product.** `src-tauri/` + `ui/` is the
+Tauri 2 build, and it now ships Windows and Linux only. `macos/` is a native
+AppKit + SwiftUI app, and it is what macOS ships — same bundle identifier, same
+config file, so an existing install upgrades in place. They share no code: the
+domain logic exists twice, once in Rust and once in Swift, which is the single
+most important thing to know before changing anything (see the invariant
+below).
 
 ## Commands
 
@@ -24,6 +32,27 @@ AISTAT_LOG=debug cargo run -p aistat-core --example smoke
 cargo tauri dev                                 # dev run (needs a display; tray-only app, no window appears until you click the tray icon)
 cargo tauri build                               # release bundle
 ```
+
+macOS, from `macos/`:
+
+```sh
+swift test                                      # 56 tests, no display needed
+swift test --filter StatusPageTests             # one suite; --filter matches type/function names, not @Suite titles
+swift run aistat-smoke                          # live fetch of the default sites
+swift run aistat-preview docs/preview           # render the UI off-screen to PNGs
+UNIVERSAL=1 DMG=1 Scripts/bundle.sh             # what CI ships
+open .build/bundle/AIStat.app
+log stream --predicate 'subsystem == "com.aistat.app"' --level debug
+```
+
+`swift run AIStat` starts, but three behaviours need the bundle `Scripts/bundle.sh`
+builds and do nothing without it: `LSUIElement`, `UNUserNotificationCenter`
+(refuses to post with no registered bundle identifier) and `SMAppService`
+(nothing to register as a login item).
+
+`cargo tauri build` on a Mac still produces a macOS Tauri bundle. That is left
+working on purpose — it is how you develop `ui/` without a Windows or Linux
+machine — but it is not what gets released.
 
 `cargo tauri` needs the Tauri CLI (`cargo install tauri-cli --version "^2" --locked`,
 or `npm i -g @tauri-apps/cli`). There is **no frontend build step** — `ui/` is
@@ -55,6 +84,13 @@ Three layers, in dependency order:
   panel placement); `state.rs` is the shared `AppState`.
 - **`ui/`** — three static files. `app.js` talks to Rust via `window.__TAURI__`
   (`withGlobalTauri: true`), no bundler, no modules.
+- **`macos/`** — the native app, a SwiftPM package. `Sources/AIStatCore/` is the
+  Swift counterpart of `crates/core` and is AppKit-free for the same reason;
+  `Sources/AIStatUI/` is the shell (status item, popover, settings window,
+  model); `Sources/AIStatApp/` is one line, because a SwiftPM executable target
+  cannot be imported by tests. `macos/README.md` explains what the native
+  platform let it delete from the Tauri design, and why `MenuBarExtra` is not
+  used.
 
 ### The refresh cycle
 
@@ -67,6 +103,32 @@ and by the `refresh_now` command. Anything that needs to affect the tray or the
 panel should go through it rather than mutating state directly.
 
 ### Cross-cutting invariants
+
+**The domain logic exists twice, and a change to one copy is a bug until it
+lands in both.** These pairs have no shared source and nothing will fail if they
+drift — the two builds will simply disagree about whether a service is down:
+
+| Rust | Swift |
+|---|---|
+| `crates/core/src/normalize.rs` | `macos/Sources/AIStatCore/Normalize.swift` |
+| `crates/core/src/aggregate.rs` | `aggregate()` in `macos/Sources/AIStatCore/Status.swift` |
+| `crates/core/src/providers/statuspage.rs` | `macos/Sources/AIStatCore/Providers/StatusPageProvider.swift` |
+| `crates/core/src/providers/flashduty.rs` | `macos/Sources/AIStatCore/Providers/FlashDutyProvider.swift` |
+| `crates/core/src/providers/icon.rs` | `macos/Sources/AIStatCore/Providers/IconResolver.swift` |
+| `crates/core/src/snapshot.rs` | `macos/Sources/AIStatCore/Snapshot.swift` |
+| `crates/core/src/config.rs` | `macos/Sources/AIStatCore/Config.swift` |
+
+Both sides carry the same tests for the same reason, so porting a fix means
+porting its test. The config pair is stricter than the rest: the JSON wire names
+must stay identical, because both builds read
+`~/Library/Application Support/com.aistat.app/config.json` and a macOS user
+moving between them must keep their settings. `readsAConfigWrittenByTheRustBuild`
+in `macos/Tests/AIStatCoreTests/ConfigTests.swift` pins that.
+
+What is deliberately *not* duplicated is everything under `src-tauri/` — the
+tray raster, the panel geometry, the appearance probe, the notification identity
+dance. The native platform supplies all of it; `macos/README.md` has the table.
+
 
 **The status vocabulary is duplicated in four places.** Adding or renaming a
 `Status` variant means touching all of them:
@@ -221,9 +283,13 @@ Three things follow, and all three have comments guarding them:
   case the registration never took; it costs one string read per refresh and
   redraws only when the answer moved.
 
-This is also the honest answer to "would a Swift rewrite avoid this?" — no. A
-native app gets its own `statusItem.button` instead of a probe, but it observes
-the same key path for the same reason.
+This was written as the honest answer to "would a Swift rewrite avoid this?" —
+no — and `macos/` has since confirmed it. The native app owns its status item,
+so the *probe* is gone, but it observes the same key path on it for the same
+reason, and it needed the same two guards: coalesce the callback off the KVO
+call-out, because assigning `button.image` makes AppKit report a transient
+`DarkAqua` that reads exactly like the user switching appearance, and match on
+the appearance *name* rather than `bestMatch`.
 
 Apple's own advice is to sidestep all of this with a template image, which the
 system tints for free — that is what `IconStyle` cannot use, because a template
@@ -241,6 +307,17 @@ has none" so the HTML isn't refetched every poll.
 `[workspace.package] version` in the root `Cargo.toml` is the single source of truth.
 `tauri.conf.json` intentionally has **no** `version` field so Tauri falls back to it,
 and the release workflow refuses to build a tag that disagrees.
+
+The Swift side holds no copy of the number either: `macos/Scripts/bundle.sh`
+reads it out of `../Cargo.toml` and stamps `CFBundleShortVersionString`, and
+`AIStatCore.version` reads that back at runtime. So `scripts/release.sh` needs
+no changes to cover macOS.
+
+The release workflow has two build paths. The `build` matrix is Tauri and covers
+Windows ×2 and Linux ×2; the `macos` job runs `swift test` and
+`macos/Scripts/bundle.sh`, and uploads the dmg. The `homebrew` job is unchanged
+by the split — it asks the release which `.dmg` is attached and renders the cask
+from that, so it does not care which toolchain produced it.
 
 ```sh
 scripts/release.sh 0.2.0            # validates, bumps Cargo.toml, refreshes Cargo.lock, commits, tags

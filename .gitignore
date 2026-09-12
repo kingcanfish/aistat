@@ -9,3 +9,7 @@ src-tauri/gen/
 # generators that emit them, and the seeded canvas. Scratch input for a
 # published Artifact, not part of the build.
 .design/
+
+# SwiftPM build products for the native macOS app.
+macos/.build/
+macos/.swiftpm/

@@ -4,7 +4,10 @@ Cross-platform status bar/menu bar app that monitors AI service status pages in
 the background, shows an aggregate status in the tray, and notifies you on
 status changes.
 
-Built with **Tauri (Rust + web frontend)**. Ships with three adapters:
+Two builds of the same app. **macOS** is native AppKit + SwiftUI (`macos/`);
+**Windows and Linux** are **Tauri** (Rust + a web frontend). Both ship the same
+three adapters, read the same config file, and follow the same rules for what a
+status means:
 
 | Site | Underlying service | Adapter |
 |------|--------------------|---------|
@@ -26,7 +29,7 @@ brew install --cask aistat
 
 | Platform | Architectures | Artifact |
 |---|---|---|
-| macOS | Intel + Apple Silicon (universal) | `.dmg` |
+| macOS 14+ | Intel + Apple Silicon (universal) | `.dmg` (native app) |
 | Windows | x86_64, arm64 | `.exe` (NSIS); x86_64 also gets `.msi` |
 | Linux | x86_64, aarch64 | `.deb`, `.rpm`; x86_64 also gets `.AppImage` |
 
@@ -37,23 +40,24 @@ Builds are not code-signed. On macOS clear the quarantine flag once with
 ## Features
 
 - Tray icon reflects the aggregate (worst) status across all sites.
-- Left-click the tray icon to open the panel — it is anchored directly under the
-  icon and dismisses itself when it loses focus, like a native menu bar popover.
-  Right-click the icon for the menu (Refresh / Settings / Quit).
-- The panel is a translucent vibrancy surface (NSVisualEffectView on macOS,
-  Mica/Acrylic on Windows) and follows the system light/dark mode and accent
-  color.
-- On macOS the app runs as an accessory (`LSUIElement`): menu bar only, no Dock
-  icon.
+- Click it for the panel — anchored under the icon, sized to its content up to a
+  maximum, dismissing itself when it loses focus.
+- The panel is a translucent vibrancy surface and follows the system light/dark
+  mode and accent color.
+- Menu bar only, no Dock icon (`LSUIElement` on macOS).
 - The menu bar icon is a robot tinted with the aggregate status color; each site
   row shows the status page's own logo, scraped from its `<link rel=icon>`.
-- The panel sizes itself to its content, up to a maximum, after which it scrolls.
 - Configurable refresh interval (default 300s) and desktop notifications on
   status change.
-- Add/remove sites from the settings panel. The adapter is **detected
-  automatically** from the URL — sites that expose neither supported API are
-  reported instead of being saved.
-- Add new providers by implementing `StatusProvider` in `crates/core`.
+- Add/remove sites from settings. The adapter is **detected automatically**
+  from the URL — pages that expose neither supported API are reported instead
+  of being saved.
+
+macOS additionally has **start at login**, and distinguishes the six states by
+SF Symbol shape as well as colour, so the reading survives for a colour-blind
+user. Its settings live in a window of their own rather than inside the panel.
+Windows and Linux keep the right-click tray menu (Refresh / Settings / Quit);
+the native build puts those in the panel's own footer instead.
 
 ## Status model
 
@@ -72,11 +76,17 @@ Builds are not code-signed. On macOS clear the quarantine flag once with
 crates/core/     Tauri-agnostic core: model, config, providers, snapshot diffing
 src-tauri/       Tauri app: tray, scheduler, notifications, IPC commands
 ui/              Static web frontend (no build step)
+macos/           The native macOS app (SwiftPM). See macos/README.md.
 ```
+
+The domain logic exists twice — once in `crates/core`, once in
+`macos/Sources/AIStatCore` — because the two shells share no code. A change to a
+provider mapping is a bug until it lands in both; AGENTS.md lists the pairs.
 
 ## Prerequisites
 
-- Rust (stable)
+- Rust (stable), for the Windows/Linux build
+- Xcode 15 or newer, for the macOS build
 - Platform webview deps:
   - Linux: `webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator`, `librsvg`
     (Arch: `sudo pacman -S webkit2gtk-4.1 libayatana-appindicator`)
@@ -101,6 +111,20 @@ cargo tauri build
 `cargo tauri` requires the Tauri CLI: `npm i -g @tauri-apps/cli` (or use
 `bunx @tauri-apps/cli`).
 
+The native macOS app builds from `macos/`:
+
+```sh
+cd macos
+swift test                            # 56 tests, no display needed
+swift run aistat-smoke                # live fetch of the default sites
+UNIVERSAL=1 DMG=1 Scripts/bundle.sh   # what CI ships
+open .build/bundle/AIStat.app
+```
+
+`cargo tauri build` on a Mac still produces a macOS Tauri bundle — that is how
+you develop `ui/` without a Windows or Linux machine — but it is not what gets
+released.
+
 ## Releasing
 
 `[workspace.package] version` in `Cargo.toml` is the single source of truth.
@@ -116,7 +140,8 @@ git push origin main --follow-tags       # start the build
 Pushing a `v*` tag runs the release workflow, which:
 
 1. checks the tag against `Cargo.toml` and opens a draft release;
-2. builds all five targets in parallel and uploads their bundles;
+2. builds four Tauri targets and the native macOS app in parallel, and uploads
+   their bundles;
 3. publishes the release;
 4. renders `Casks/aistat.rb` and pushes it to `kingcanfish/homebrew-tap`.
 

@@ -86,13 +86,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # One macOS job covers both architectures: a universal binary is what
-          # the Homebrew cask ships, so Intel and Apple Silicon share a build.
-          - os: macos-14
-            label: macOS (universal)
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: --target universal-apple-darwin --bundles app,dmg
-
+          # No macOS entry: that platform is built by the `macos` job below,
+          # from the native Swift app in macos/. See AGENTS.md.
           - os: ubuntu-22.04
             label: Linux (x86_64)
             rust_targets: x86_64-unknown-linux-gnu
@@ -165,9 +160,47 @@ jobs:
           releaseId: ${{ needs.preflight.outputs.release_id }}
           args: ${{ matrix.args }}
 
+  # macOS ships the native Swift app in macos/, not the Tauri build. It is the
+  # same product — same bundle identifier, same config file, so an existing
+  # install upgrades in place — but the shell is AppKit and SwiftUI rather than
+  # a webview, and the artifact is produced here instead of by tauri-action.
+  #
+  # The cask job below does not care which of the two produced the dmg: it asks
+  # the release what .dmg is attached and renders from that.
+  macos:
+    name: macOS (Swift, universal)
+    needs: preflight
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      # The counterpart of `cargo test -p aistat-core` in the build matrix:
+      # the provider mappings exist twice in this repo and both copies are
+      # tested on every release.
+      - name: Run tests
+        run: swift test
+
+      # The version is read from ../Cargo.toml by the script, which is why
+      # nothing here has to be told what it is.
+      - name: Build, bundle and pack
+        env:
+          UNIVERSAL: '1'
+          DMG: '1'
+        run: Scripts/bundle.sh
+
+      - name: Upload to the draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$RELEASE_TAG" .build/bundle/*.dmg --clobber
+
   publish:
     name: Publish release
-    needs: [preflight, build]
+    needs: [preflight, build, macos]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

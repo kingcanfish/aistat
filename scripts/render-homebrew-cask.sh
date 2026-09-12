@@ -4,6 +4,10 @@
 # A cask rather than a formula: AIStat is a GUI .app bundle, not a CLI binary.
 # The dmg is universal, so one url/sha256 pair covers Intel and Apple Silicon.
 #
+# The dmg this points at is built from macos/ — the native Swift app — not from
+# the Tauri workspace. Nothing here needs to know that: the release workflow
+# asks the release which .dmg is attached and passes it in.
+#
 #   usage: render-homebrew-cask.sh <version> <dmg-url> <dmg-sha256>
 set -euo pipefail
 
@@ -29,7 +33,9 @@ cask "aistat" do
   desc "Menu bar app that watches AI service status pages"
   homepage "https://github.com/kingcanfish/aistat"
 
-  depends_on macos: :big_sur
+  # macOS 14. The native app uses @Observable and ContentUnavailableView, both
+  # of which landed in Sonoma. This is a floor the Tauri build did not have.
+  depends_on macos: :sonoma
 
   app "AIStat.app"
 
@@ -45,7 +51,8 @@ cask "aistat" do
 
       xattr -dr com.apple.quarantine "/Applications/AIStat.app"
 
-    AIStat runs in the menu bar only and has no Dock icon.
+    AIStat runs in the menu bar only and has no Dock icon. Click the icon for
+    the panel; Settings is in the panel's footer, or press Command-comma.
   EOS
 end
 CASK
