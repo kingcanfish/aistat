@@ -11,7 +11,15 @@ private func site(_ id: String, _ overall: Status) -> SiteStatus {
         adapter: "statuspage", overall: overall)
 }
 
+/// Every suite here is `@MainActor`, and deliberately so rather than by need.
+/// SwiftUI infers main-actor isolation for a `View` from its `body`, and it
+/// does so differently between toolchains — `MenuBarGlyph.weight(for:status:)`
+/// is isolated under the Xcode the release runner has and was not under the
+/// newer one this was written on, which failed a release build and nothing
+/// before it. Annotating the whole layer, which is main-actor in nature anyway,
+/// takes the inference out of the question.
 @Suite("Panel headline")
+@MainActor
 struct PanelHeadlineTests {
     @Test func namesTheServiceInTrouble() {
         let statuses = [site("claude", .partialOutage), site("openai", .operational)]
@@ -48,6 +56,7 @@ struct PanelHeadlineTests {
 }
 
 @Suite("Menu bar icon")
+@MainActor
 struct MenuBarGlyphTests {
     /// Severity has to map onto weight, or the escalation is decoration.
     @Test func escalatingMapsSeverityOntoWeight() {
