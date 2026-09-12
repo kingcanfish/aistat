@@ -1,0 +1,85 @@
+name: CI
+
+# Everything here used to happen only on a `v*` tag, inside the release
+# workflow, which meant a break was found after the tag existed — and fixing
+# one cost a force-moved tag and a restart of four Tauri builds. v0.3.0 took
+# three attempts that way, all three for the same reason: the release runner's
+# Xcode is older than the one most work is done on, and the two disagree about
+# how much actor isolation SwiftUI infers for a `View`.
+#
+# So: build and test both halves on every push. Tags are deliberately excluded;
+# release.yml covers those and runs the same commands.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first one's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The native macOS app. `swift build` as well as `swift test`, because
+  # `swift test` only builds the test targets and what they depend on — neither
+  # aistat-smoke nor aistat-preview would be compiled otherwise.
+  macos:
+    name: macOS app
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - run: swift build
+      - run: swift test
+
+  # `aistat-core` only: it pulls in no GTK or webview dependency, so it builds
+  # on a Linux runner without the apt install the release matrix needs. This is
+  # the same command release.yml runs inside each of its five build jobs.
+  core:
+    name: Rust core
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+      # `--locked` for the same reason the release script asserts it: every
+      # release job builds with it, and a lock that disagrees with Cargo.toml
+      # is a hard error there rather than a silent update.
+      - run: cargo test -p aistat-core --locked
+
+  # The bundle script is not exercised by either of the above, and it is what
+  # actually ships: the version it reads out of Cargo.toml, the ad-hoc
+  # signature, the universal slice. Not a dmg — that part is release-only.
+  bundle:
+    name: macOS bundle
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+      - run: UNIVERSAL=1 Scripts/bundle.sh
+      - name: Check the bundle is universal and versioned
+        run: |
+          APP=.build/bundle/AIStat.app
+          file "$APP/Contents/MacOS/AIStat" | grep -q 'universal binary with 2 architectures'
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          EXPECTED="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' ../Cargo.toml | head -1)"
+          echo "bundle=$VERSION Cargo.toml=$EXPECTED"
+          [ "$VERSION" = "$EXPECTED" ]
+          codesign --verify --verbose=1 "$APP"
