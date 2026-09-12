@@ -18,6 +18,14 @@ pub struct StatusChange {
 /// Compares a fresh batch of statuses against the previous snapshot and returns
 /// one [`StatusChange`] per site whose overall status changed or that gained new
 /// incidents. Used to drive notifications.
+///
+/// A site with no previous reading produces nothing at all — not even for the
+/// incidents it already has open. There is nothing to compare against, so
+/// nothing has *changed*, and the setting this feeds says "notify on status
+/// change". That covers the two cases where it matters: the first fetch after
+/// launch, which would otherwise announce every open incident on every service
+/// at once, and a site the user has only just added, whose current state they
+/// are looking at as they add it.
 pub fn detect_changes(
     before: &HashMap<String, SiteStatus>,
     after: &[SiteStatus],
@@ -25,12 +33,11 @@ pub fn detect_changes(
     after
         .iter()
         .filter_map(|curr| {
-            let prev = before.get(&curr.id);
-            let status_changed = prev.map(|p| p.overall != curr.overall).unwrap_or(false);
+            let prev = before.get(&curr.id)?;
+            let status_changed = prev.overall != curr.overall;
 
-            let prev_incident_ids: std::collections::HashSet<&str> = prev
-                .map(|p| p.incidents.iter().map(|i| i.id.as_str()).collect())
-                .unwrap_or_default();
+            let prev_incident_ids: std::collections::HashSet<&str> =
+                prev.incidents.iter().map(|i| i.id.as_str()).collect();
             let new_incidents: Vec<Incident> = curr
                 .incidents
                 .iter()
@@ -42,7 +49,7 @@ pub fn detect_changes(
                 Some(StatusChange {
                     site_id: curr.id.clone(),
                     site_name: curr.name.clone(),
-                    old_overall: prev.map(|p| p.overall).unwrap_or(Status::Unknown),
+                    old_overall: prev.overall,
                     new_overall: curr.overall,
                     new_incidents,
                 })
@@ -109,10 +116,28 @@ mod tests {
         assert!(detect_changes(&before, &after).is_empty());
     }
 
+    /// The first reading of a site is a baseline, not a change — at launch, and
+    /// when one is added. Firing here would mean every open incident on every
+    /// service arrives as a notification the moment the app starts.
     #[test]
-    fn new_site_does_not_fire() {
+    fn a_site_with_no_previous_reading_never_fires() {
         let before = HashMap::new();
-        let after = vec![site("a", Status::Operational, &[])];
-        assert!(detect_changes(&before, &after).is_empty());
+        assert!(detect_changes(&before, &[site("a", Status::Operational, &[])]).is_empty());
+        assert!(detect_changes(&before, &[site("a", Status::FullOutage, &["inc-1"])]).is_empty());
+    }
+
+    /// ...but the reading it establishes is still a baseline, so the *next*
+    /// fetch reports against it.
+    #[test]
+    fn the_second_fetch_reports_against_the_first() {
+        let first = site("a", Status::FullOutage, &["inc-1"]);
+        assert!(detect_changes(&HashMap::new(), std::slice::from_ref(&first)).is_empty());
+
+        let before = HashMap::from([("a".to_string(), first)]);
+        let after = vec![site("a", Status::FullOutage, &["inc-1", "inc-2"])];
+        let changes = detect_changes(&before, &after);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].new_incidents.len(), 1);
+        assert_eq!(changes[0].new_incidents[0].id, "inc-2");
     }
 }
