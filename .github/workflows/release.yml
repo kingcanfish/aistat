@@ -179,6 +179,14 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
 
+      # `swift test` builds only the test targets and what they depend on, so
+      # it would not have caught a break in `aistat-smoke` or `aistat-preview`.
+      # Cheap here, and the runner's Xcode is older than most developers' —
+      # v0.3.0 failed on a missing `@MainActor` that the newer toolchain had
+      # been willing to infer.
+      - name: Build every product
+        run: swift build
+
       # The counterpart of `cargo test -p aistat-core` in the build matrix:
       # the provider mappings exist twice in this repo and both copies are
       # tested on every release.

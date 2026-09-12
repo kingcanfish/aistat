@@ -16,6 +16,7 @@ import AppKit
 /// key. The actions are left unimplemented on purpose — `cut:`, `copy:` and the
 /// rest are resolved against the first responder at the moment they fire, which
 /// is the field editor of whichever text field has focus.
+@MainActor
 enum MainMenu {
     static func install() {
         NSApp.mainMenu = make()
