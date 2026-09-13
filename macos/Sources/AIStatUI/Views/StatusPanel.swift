@@ -21,6 +21,10 @@ struct StatusPanel: View {
     /// so a four-service list with one incident open still fits without one.
     private static let maxListHeight: CGFloat = 420
 
+    /// Clickable size for the header's icon-only button. Comfortably larger
+    /// than the glyph inside it, which is the point.
+    private static let hitTarget: CGFloat = 24
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -67,11 +71,20 @@ struct StatusPanel: View {
         Button {
             Task { await model.refresh() }
         } label: {
-            if model.isRefreshing {
-                ProgressView().controlSize(.small).frame(width: 16, height: 16)
-            } else {
-                Image(systemName: "arrow.clockwise").frame(width: 16, height: 16)
+            Group {
+                if model.isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
+            // A 16-point box was smaller than the glyph drawn in it, and an
+            // `Image` only takes hits where it has ink — so the corners of the
+            // icon, and the gap between the arrow's ends, did nothing. The
+            // frame gives the target a size worth aiming at and
+            // `contentShape` makes all of it live.
+            .frame(width: Self.hitTarget, height: Self.hitTarget)
+            .contentShape(.rect)
         }
         .buttonStyle(.accessoryBar)
         .disabled(model.isRefreshing)
