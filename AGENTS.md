@@ -73,14 +73,21 @@ and runs `Scripts/bundle.sh` to check the app still assembles universal and
 versioned. `.github/workflows/release.yml` runs only on `v*` tags and repeats
 the same commands inside the jobs that produce artifacts.
 
-Run the macOS job's commands before pushing — but do not read a green local run
-as a green CI run. **The release runner's Xcode is older than the one you are
-probably on**, and the two disagree about how much actor isolation SwiftUI
-infers for a `View`: v0.3.0 failed twice on code that compiled clean locally,
-once because a static touching `NSApp` had no `@MainActor` and once because a
-test suite calling `MenuBarGlyph.weight(for:status:)` had none. Annotate rather
-than rely on inference. The CI workflow exists so the answer arrives on a push
-instead of after a tag.
+**Both macOS jobs run on `macos-26`, and the runner label is load-bearing.**
+They were on `macos-15` for exactly one release and it cost two things. Its
+Xcode is older, and the two toolchains disagree about how much actor isolation
+SwiftUI infers for a `View` — v0.3.0 failed twice on code that compiled clean
+locally, once because a static touching `NSApp` had no `@MainActor` and once
+because a test suite calling `MenuBarGlyph.weight(for:status:)` had none. Worse,
+it shipped: macOS picks an app's design language from the SDK it was *linked
+against*, so a build against the 15.5 SDK renders in the pre-Tahoe style on
+macOS 26 — no Liquid Glass — while every local build had it. Nothing in the
+source says which SDK was used and nothing failed; the released app just looked
+older than the development one.
+
+So the `bundle` job asserts the binary was linked against the runner's own SDK.
+Annotate isolation rather than relying on inference, and do not read a green
+local run as a green CI run.
 
 `src-tauri`'s own tests run in neither workflow, so run `cargo test --workspace`
 yourself. There is no lint or clippy job, and no `cargo fmt` check — see above

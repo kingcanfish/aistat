@@ -32,7 +32,7 @@ jobs:
   # aistat-smoke nor aistat-preview would be compiled otherwise.
   macos:
     name: macOS app
-    runs-on: macos-15
+    runs-on: macos-26
     defaults:
       run:
         working-directory: macos
@@ -67,19 +67,35 @@ jobs:
   # signature, the universal slice. Not a dmg — that part is release-only.
   bundle:
     name: macOS bundle
-    runs-on: macos-15
+    runs-on: macos-26
     defaults:
       run:
         working-directory: macos
     steps:
       - uses: actions/checkout@v4
       - run: UNIVERSAL=1 Scripts/bundle.sh
-      - name: Check the bundle is universal and versioned
+      - name: Check the bundle is universal, versioned and current
         run: |
           APP=.build/bundle/AIStat.app
-          file "$APP/Contents/MacOS/AIStat" | grep -q 'universal binary with 2 architectures'
+          BIN="$APP/Contents/MacOS/AIStat"
+          file "$BIN" | grep -q 'universal binary with 2 architectures'
+
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
           EXPECTED="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' ../Cargo.toml | head -1)"
           echo "bundle=$VERSION Cargo.toml=$EXPECTED"
           [ "$VERSION" = "$EXPECTED" ]
+
+          # macOS decides which design language to give an app from the SDK it
+          # was *linked against*, not from the OS it runs on. v0.3.0 shipped
+          # built against the 15.5 SDK and so rendered in the pre-Tahoe style on
+          # macOS 26 — no Liquid Glass — while every local build had it. Nothing
+          # in the source says which SDK was used, and nothing failed; the only
+          # symptom was that the released app looked older than the dev one.
+          # Assert the binary was linked against whatever SDK this runner has,
+          # so a runner image moving on cannot quietly leave the app behind.
+          RUNNER_SDK="$(xcrun --sdk macosx --show-sdk-version | cut -d. -f1)"
+          BUILT_SDK="$(vtool -show-build "$BIN" | awk '$1=="sdk" {print $2; exit}' | cut -d. -f1)"
+          echo "linked against SDK $BUILT_SDK, runner has $RUNNER_SDK"
+          [ "$BUILT_SDK" = "$RUNNER_SDK" ]
+
           codesign --verify --verbose=1 "$APP"

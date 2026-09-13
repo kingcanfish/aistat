@@ -170,7 +170,7 @@ jobs:
   macos:
     name: macOS (Swift, universal)
     needs: preflight
-    runs-on: macos-15
+    runs-on: macos-26
     defaults:
       run:
         working-directory: macos
