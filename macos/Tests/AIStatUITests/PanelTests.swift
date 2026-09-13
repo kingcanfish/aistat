@@ -163,3 +163,57 @@ struct MainMenuTests {
         #expect(quit.action == #selector(NSApplication.terminate(_:)))
     }
 }
+
+/// Counts how often the model announced a finished refresh. A class because the
+/// callback escapes.
+@MainActor
+private final class RefreshCounter {
+    var count = 0
+}
+
+@Suite("Refreshing")
+@MainActor
+struct RefreshTests {
+    /// No sites, so nothing here touches the network: `fetchAll` and the icon
+    /// resolver both return early on an empty list.
+    func model() -> AppModel {
+        let model = AppModel(
+            configURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("aistat-test-\(UUID().uuidString).json"))
+        model.seed(config: Config(sites: []), statuses: [])
+        return model
+    }
+
+    /// The scheduler can come due while the user is mid-refresh — the button is
+    /// disabled then, so the UI cannot prevent it. Overlapping fetches did the
+    /// work twice and let whichever finished first re-enable the button while
+    /// the other was still running.
+    @Test func concurrentRefreshesCoalesce() async {
+        let model = model()
+        let counter = RefreshCounter()
+        model.onDisplayStateChanged = { counter.count += 1 }
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<5 { group.addTask { await model.refresh() } }
+        }
+
+        #expect(counter.count >= 1)
+        #expect(counter.count < 5, "five at once should not have fetched five times")
+    }
+
+    /// The other half, and the one that fails silently: if the in-flight task is
+    /// not cleared when it finishes, every later refresh joins a completed one
+    /// and the app quietly stops updating.
+    @Test func refreshingAgainAfterwardsStillWorks() async {
+        let model = model()
+        let counter = RefreshCounter()
+        model.onDisplayStateChanged = { counter.count += 1 }
+
+        await model.refresh()
+        await model.refresh()
+        await model.refresh()
+
+        #expect(counter.count == 3)
+        #expect(model.isRefreshing == false)
+    }
+}

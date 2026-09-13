@@ -61,6 +61,8 @@ final class AppModel {
     /// refetched on every poll.
     private var icons: [String: String?] = [:]
     private var scheduler: Task<Void, Never>?
+    /// The fetch currently running, if any. See ``refresh()``.
+    private var inFlight: Task<Void, Never>?
     /// Suppresses persistence and refetching. Set only by ``seed(config:statuses:)``,
     /// so the preview renderer can put the model in a given state without
     /// writing a config file or reaching the network.
@@ -146,7 +148,33 @@ final class AppModel {
     ///
     /// Anything that needs to affect the icon or the panel should go through
     /// here rather than mutating state directly.
+    ///
+    /// Only ever one at a time: a second caller joins the fetch already running
+    /// instead of starting another. The button is disabled while
+    /// ``isRefreshing``, so the overlap this prevents is the one the UI cannot
+    /// — the scheduler coming due while the user is mid-refresh, which fetched
+    /// everything twice and let whichever finished first clear `isRefreshing`
+    /// out from under the other, re-enabling the button while a fetch was still
+    /// in flight.
     func refresh() async {
+        if let running = inFlight {
+            await running.value
+            return
+        }
+        // Assigned before the first suspension, so the task cannot start — let
+        // alone finish and clear this — before it is recorded.
+        let task = Task { @MainActor in
+            await self.performRefresh()
+            // Cleared here rather than after `await task.value` below: a caller
+            // arriving between this task finishing and that line running would
+            // otherwise join an already-finished fetch and get nothing done.
+            self.inFlight = nil
+        }
+        inFlight = task
+        await task.value
+    }
+
+    private func performRefresh() async {
         isRefreshing = true
         defer { isRefreshing = false }
 
