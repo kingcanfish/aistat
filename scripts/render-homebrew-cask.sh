@@ -22,13 +22,17 @@ SHA256="${3:?dmg sha256 required}"
 INTERPOLATION='#{version}'
 URL_TEMPLATE="${URL//$VERSION/$INTERPOLATION}"
 
+# No `verified:` on the url stanza. Homebrew 7 deprecated it, and it only ever
+# restated what the default check derives anyway: the dmg is served from the
+# same `github.com/kingcanfish/aistat` the homepage points at. Left in place it
+# makes every install, upgrade and audit print a deprecation warning naming the
+# tap, which is how it got reported.
 cat <<CASK
 cask "aistat" do
   version "${VERSION}"
   sha256 "${SHA256}"
 
-  url "${URL_TEMPLATE}",
-      verified: "github.com/kingcanfish/aistat/"
+  url "${URL_TEMPLATE}"
   name "AIStat"
   desc "Menu bar app that watches AI service status pages"
   homepage "https://github.com/kingcanfish/aistat"
