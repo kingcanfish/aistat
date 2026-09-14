@@ -129,6 +129,15 @@ struct StatusPanel: View {
                 serviceList
             }
             .scrollBounceBehavior(.basedOnSize)
+            // No indicator, on purpose. On a Mac set to "Show scroll bars:
+            // Always", an `NSScrollView` pays for its scroller out of the clip
+            // view's width instead of floating it over the content — measured
+            // here as 303 points of row for a 320-point panel. So the first
+            // row that grew the list past the cap narrowed every row and slid
+            // the right-hand status column left, mid-click. Wheel and trackpad
+            // scrolling are untouched; the web build dropped its bar the same
+            // way, with a zero-width `::-webkit-scrollbar`.
+            .scrollIndicators(.never)
             .frame(maxHeight: Self.maxListHeight)
         }
     }

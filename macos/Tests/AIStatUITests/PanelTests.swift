@@ -1,6 +1,7 @@
 import AIStatCore
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import AIStatUI
@@ -76,6 +77,63 @@ struct MenuBarGlyphTests {
             #expect(MenuBarGlyph.weight(for: .lamp, status: status) == .calm)
             #expect(MenuBarGlyph.weight(for: .tinted, status: status) == .tinted)
         }
+    }
+}
+
+/// The services list is capped, so a long one scrolls — and a row that grows
+/// the list past the cap must not re-lay-out the rows that are already there.
+/// Asserted against the AppKit view SwiftUI builds, because nothing else in
+/// the suite can see what a scroll view does with its own width.
+@Suite("Panel services list")
+@MainActor
+struct PanelListScrollTests {
+    /// The real panel, hosted off-screen, with more rows than fit.
+    private func hostedPanel() -> NSView {
+        let statuses = (0..<8).map { site("service-\($0)", .operational) }
+        let model = AppModel(
+            configURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("aistat-test-\(UUID().uuidString).json"))
+        model.seed(
+            config: Config(
+                sites: statuses.map {
+                    SiteConfig(id: $0.id, name: $0.name, url: $0.url, adapter: .statuspage)
+                }),
+            statuses: statuses)
+
+        let hosting = NSHostingView(
+            rootView: StatusPanel(model: model, initiallyExpanded: Set(statuses.map(\.id))))
+        hosting.frame = CGRect(x: 0, y: 0, width: 320, height: 900)
+        // A window, because the scroll view is built during a layout pass —
+        // and an app object behind it, since a test process starts with
+        // neither.
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = hosting
+        window.orderBack(nil)
+        hosting.layoutSubtreeIfNeeded()
+        window.orderOut(nil)
+        return hosting
+    }
+
+    private func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for subview in view.subviews {
+            if let found = firstScrollView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    /// A scroll view on a Mac set to "Show scroll bars: Always" charges its
+    /// scroller to the clip view's width — 17 of the panel's 320 points,
+    /// measured — rather than floating it over the content. So expanding one
+    /// row narrowed every row and slid the right-hand status column left. The
+    /// panel asks for no indicator, which costs it nothing and leaves wheel and
+    /// trackpad scrolling alone.
+    @Test func theListNeverPaysForAScroller() throws {
+        let scroll = try #require(firstScrollView(in: hostedPanel()))
+        #expect(scroll.hasVerticalScroller == false)
+        #expect(scroll.contentView.frame.width == scroll.frame.width)
     }
 }
 
