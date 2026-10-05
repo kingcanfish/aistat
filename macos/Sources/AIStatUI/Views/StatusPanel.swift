@@ -90,7 +90,12 @@ struct StatusPanel: View {
             .frame(width: Self.hitTarget, height: Self.hitTarget)
             .contentShape(.rect)
         }
-        .buttonStyle(.accessoryBar)
+        // Glass, like the footer's pair: the list scrolls under the header
+        // too, so this is the same kind of control floating over the same
+        // moving content. Circular because it is icon-only, which is the shape
+        // Liquid Glass gives a lone symbol button.
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .disabled(model.isRefreshing)
         .help("Refresh now")
         .keyboardShortcut("r")
