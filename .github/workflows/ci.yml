@@ -32,12 +32,13 @@ jobs:
   # aistat-smoke nor aistat-preview would be compiled otherwise.
   macos:
     name: macOS app
-    runs-on: macos-26
+    # Preview image (macOS 27, Xcode 27): no GA macos-27 label yet. See AGENTS.md.
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: macos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Xcode and Swift versions
         run: |
           xcodebuild -version
@@ -52,7 +53,7 @@ jobs:
     name: Rust core
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -67,12 +68,13 @@ jobs:
   # signature, the universal slice. Not a dmg — that part is release-only.
   bundle:
     name: macOS bundle
-    runs-on: macos-26
+    # Preview image (macOS 27, Xcode 27): no GA macos-27 label yet. See AGENTS.md.
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: macos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: UNIVERSAL=1 Scripts/bundle.sh
       - name: Check the bundle is universal, versioned and current
         run: |

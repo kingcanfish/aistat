@@ -37,7 +37,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_id: ${{ steps.release.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 
@@ -112,7 +112,7 @@ jobs:
             args: --target aarch64-pc-windows-msvc --bundles nsis
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 
@@ -153,7 +153,7 @@ jobs:
       # secret as an empty string — present enough to send the bundler off to
       # `security import` a certificate that isn't there, which fails the build.
       # The cask's caveats tell users to clear the quarantine flag instead.
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -170,12 +170,13 @@ jobs:
   macos:
     name: macOS (Swift, universal)
     needs: preflight
-    runs-on: macos-26
+    # Preview image (macOS 27, Xcode 27): no GA macos-27 label yet. See AGENTS.md.
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: macos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 
@@ -211,7 +212,7 @@ jobs:
     needs: [preflight, build, macos]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 
@@ -230,7 +231,7 @@ jobs:
     needs: [preflight, publish]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 

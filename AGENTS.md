@@ -73,8 +73,12 @@ and runs `Scripts/bundle.sh` to check the app still assembles universal and
 versioned. `.github/workflows/release.yml` runs only on `v*` tags and repeats
 the same commands inside the jobs that produce artifacts.
 
-**Both macOS jobs run on `macos-26`, and the runner label is load-bearing.**
-They were on `macos-15` for exactly one release and it cost two things. Its
+**Both macOS jobs run on `xcode-27`, and the runner label is load-bearing.**
+That is GitHub's *preview* image — macOS 27 with Xcode 27 and the macOS 27
+SDK — because no GA `macos-27` label exists yet; move to `macos-27` once
+actions/runner-images ships one, and expect the occasional queueing delay or
+image hiccup until then. Before that the jobs ran on `macos-26`, and before
+that on `macos-15` for exactly one release, which cost two things. Its
 Xcode is older, and the two toolchains disagree about how much actor isolation
 SwiftUI infers for a `View` — v0.3.0 failed twice on code that compiled clean
 locally, once because a static touching `NSApp` had no `@MainActor` and once
