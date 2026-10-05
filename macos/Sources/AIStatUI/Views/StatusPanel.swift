@@ -183,28 +183,35 @@ struct StatusPanel: View {
     /// nothing able to close it. The menu held two items, one of which (the
     /// project link) the settings window already has, so there was nothing to
     /// preserve.
+    ///
+    /// Glass capsules rather than the borderless accessory-bar style: the list
+    /// now scrolls under the footer, and a control floating over moving content
+    /// is what Liquid Glass is for. The container is what lets the two share
+    /// one sampling pass, so they read as a pair of the same material.
     private var footer: some View {
-        HStack(spacing: 0) {
-            Button {
-                openSettingsWindow()
-            } label: {
-                Label("Settings…", systemImage: "gearshape")
-            }
-            .buttonStyle(.accessoryBar)
-            .keyboardShortcut(",")
+        GlassEffectContainer {
+            HStack(spacing: 0) {
+                Button {
+                    openSettingsWindow()
+                } label: {
+                    Label("Settings…", systemImage: "gearshape")
+                }
+                .buttonStyle(.glass)
+                .keyboardShortcut(",")
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Label("Quit", systemImage: "power")
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label("Quit", systemImage: "power")
+                }
+                .buttonStyle(.glass)
+                .keyboardShortcut("q")
+                .help("Quit AIStat")
             }
-            .buttonStyle(.accessoryBar)
-            .keyboardShortcut("q")
-            .help("Quit AIStat")
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
     }
 }
