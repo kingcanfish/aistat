@@ -1,9 +1,12 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "AIStat",
-    platforms: [.macOS(.v14)],
+    // macOS 26: the panel and settings window are drawn with the Liquid Glass
+    // era's APIs — concentric corners, scroll edge effects, glass buttons —
+    // rather than hand-tuned imitations of them. `.v26` needs tools 6.2.
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "AIStatCore", targets: ["AIStatCore"]),
         .executable(name: "AIStat", targets: ["AIStatApp"]),

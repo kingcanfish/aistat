@@ -9,6 +9,13 @@ struct SiteRow: View {
 
     @State private var hovering = false
 
+    /// Concentric with whatever contains the row rather than a fixed 7 points.
+    /// The panel's corners grew with Liquid Glass, and a hard-coded inner radius
+    /// that matched the old popover reads as a mismatch against the new one.
+    /// The minimum is what the row had before, so where no container shape
+    /// reaches it — an offscreen render, say — nothing changes.
+    static let shape = ConcentricRectangle(corners: .concentric(minimum: 7), isUniform: true)
+
     private var attentionCount: Int {
         site.incidents.isEmpty ? site.impairedComponents.count : site.incidents.count
     }
@@ -29,7 +36,7 @@ struct SiteRow: View {
         }
         .background(
             .quinary.opacity(isExpanded ? 1 : (hovering ? 0.8 : 0)),
-            in: .rect(cornerRadius: 7, style: .continuous)
+            in: Self.shape
         )
         .onHover { hovering = $0 }
     }
@@ -197,7 +204,14 @@ struct IncidentCard: View {
         .padding(.vertical, 6)
         .padding(.trailing, 8)
         .padding(.leading, 6)
-        .background(.quaternary.opacity(0.55), in: .rect(cornerRadius: 6, style: .continuous))
+        // Concentric too, though inset this deep the concentric radius is
+        // below the minimum and the card keeps its old 6 points. The row can't
+        // hand it a tighter container: `containerShape` takes only fixed
+        // rounded rectangles, not a `ConcentricRectangle`.
+        .background(
+            .quaternary.opacity(0.55),
+            in: ConcentricRectangle(corners: .concentric(minimum: 6), isUniform: true)
+        )
     }
 
     private var meta: String {

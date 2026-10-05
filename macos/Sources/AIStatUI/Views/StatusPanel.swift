@@ -18,22 +18,26 @@ struct StatusPanel: View {
     }
 
     /// The panel stays as tall as its content up to this, then scrolls. Chosen
-    /// so a four-service list with one incident open still fits without one.
-    private static let maxListHeight: CGFloat = 420
+    /// so a four-service list with one incident open still fits without one:
+    /// the list's old 420-point cap plus the header and footer, which now sit
+    /// over the scroll view instead of beside it.
+    private static let maxPanelHeight: CGFloat = 520
 
     /// Clickable size for the header's icon-only button. Comfortably larger
     /// than the glyph inside it, which is the point.
     private static let hitTarget: CGFloat = 24
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            content
-            Divider()
-            footer
-        }
-        .frame(width: 320)
+        // Header and footer are bars over the content rather than bands either
+        // side of two `Divider`s. That is the Liquid Glass arrangement: the list
+        // scrolls under them and the edge effect fades it out, so there is no
+        // hard rule across the panel, and a list short enough not to scroll
+        // looks the same as it did.
+        content
+            .safeAreaBar(edge: .top, spacing: 0) { header }
+            .safeAreaBar(edge: .bottom, spacing: 0) { footer }
+            .frame(width: 320)
+            .frame(maxHeight: Self.maxPanelHeight)
         .onChange(of: model.config.sites.map(\.id)) { _, live in
             // A service removed in settings shouldn't leave its row expanded
             // when it comes back.
@@ -105,7 +109,7 @@ struct StatusPanel: View {
                 Text("Add a status page and AIStat will keep an eye on it.")
             } actions: {
                 Button("Add a service…") { openSettingsWindow() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
             }
             .padding(.vertical, 8)
         } else if model.statuses.isEmpty {
@@ -138,7 +142,7 @@ struct StatusPanel: View {
             // scrolling are untouched; the web build dropped its bar the same
             // way, with a zero-width `::-webkit-scrollbar`.
             .scrollIndicators(.never)
-            .frame(maxHeight: Self.maxListHeight)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
         }
     }
 

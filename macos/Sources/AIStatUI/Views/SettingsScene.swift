@@ -144,11 +144,20 @@ extension IconStyle {
 
 struct ServiceSettings: View {
     @Bindable var model: AppModel
-    @State private var selection: SiteConfig.ID?
     @State private var editing: ServiceDraft?
 
+    /// A grouped form, like the General pane next to it, rather than a bare
+    /// `List` over a strip of `+ − ✎` buttons. That strip is the pre-Tahoe
+    /// idiom — a gradient button bar glued under a table — and against the
+    /// grouped General pane it made the window look like two apps. System
+    /// Settings now edits a list the way this does: rows in a rounded group,
+    /// a details button on each row, and the add action under the group.
+    ///
+    /// Losing selection loses nothing: the minus and pencil buttons were the
+    /// only things that read it, and each row now carries its own edit button,
+    /// its own context menu, and a Remove button in the sheet it opens.
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if model.config.sites.isEmpty {
                 ContentUnavailableView {
                     Label("No services", systemImage: "globe")
@@ -156,75 +165,46 @@ struct ServiceSettings: View {
                     Text("AIStat watches Atlassian Statuspage, incident.io and FlashDuty pages.")
                 } actions: {
                     Button("Add a service…") { editing = .new() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                 }
             } else {
-                List(selection: $selection) {
-                    ForEach(model.config.sites) { site in
-                        ServiceListRow(site: site, status: model.status(for: site.id))
-                            .tag(site.id)
+                Form {
+                    Section {
+                        ForEach(model.config.sites) { site in
+                            ServiceListRow(
+                                site: site,
+                                status: model.status(for: site.id),
+                                edit: { editing = ServiceDraft(site) }
+                            )
                             .contextMenu {
                                 Button("Edit…") { editing = ServiceDraft(site) }
-                                Button("Remove", role: .destructive) { remove(site.id) }
+                                Button("Remove", role: .destructive) { model.removeSite(site.id) }
                             }
+                        }
+                        .onMove { model.moveSites(from: $0, to: $1) }
+                    } footer: {
+                        HStack {
+                            Text("Drag to reorder. The panel lists services in this order.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Add Service…") { editing = .new() }
+                        }
                     }
-                    .onMove { model.moveSites(from: $0, to: $1) }
                 }
-                // Double-clicking a row to edit it is the macOS habit; the
-                // context menu and the pencil button cover the other two.
-                .contextMenu(forSelectionType: SiteConfig.ID.self) { _ in } primaryAction: { ids in
-                    if let id = ids.first, let site = model.config.sites.first(where: { $0.id == id }) {
-                        editing = ServiceDraft(site)
-                    }
-                }
+                .formStyle(.grouped)
             }
-
-            Divider()
-            toolbar
         }
         .sheet(item: $editing) { draft in
             ServiceEditor(draft: draft, model: model)
         }
-    }
-
-    private var toolbar: some View {
-        HStack(spacing: 0) {
-            Button { editing = .new() } label: {
-                Image(systemName: "plus").frame(width: 22, height: 18)
-            }
-            .help("Add a service")
-
-            Button { if let selection { remove(selection) } } label: {
-                Image(systemName: "minus").frame(width: 22, height: 18)
-            }
-            .disabled(selection == nil)
-            .help("Remove the selected service")
-
-            Button {
-                if let selection, let site = model.config.sites.first(where: { $0.id == selection }) {
-                    editing = ServiceDraft(site)
-                }
-            } label: {
-                Image(systemName: "pencil").frame(width: 22, height: 18)
-            }
-            .disabled(selection == nil)
-            .help("Edit the selected service")
-
-            Spacer(minLength: 0)
-        }
-        .buttonStyle(.accessoryBar)
-        .padding(6)
-    }
-
-    private func remove(_ id: SiteConfig.ID) {
-        model.removeSite(id)
-        if selection == id { selection = nil }
     }
 }
 
 private struct ServiceListRow: View {
     var site: SiteConfig
     var status: SiteStatus?
+    var edit: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -244,6 +224,15 @@ private struct ServiceListRow: View {
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1.5)
                 .background(.quaternary, in: .capsule)
+            // The row's own details button, which is how System Settings lets
+            // you into one item of a list. Double-clicking a row was the old way
+            // in, and a form row has no double-click to give.
+            Button(action: edit) {
+                Image(systemName: "info.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Edit \(site.name)")
+            .accessibilityLabel("Edit \(site.name)")
         }
         .padding(.vertical, 2)
     }
@@ -318,35 +307,45 @@ struct ServiceEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Form {
-                TextField("Name", text: $draft.name, prompt: Text("Claude"))
-                TextField("Status page", text: $draft.url, prompt: Text("status.claude.com"))
-                    .onSubmit { Task { await check() } }
-                    .onChange(of: draft.url) { _, _ in draft.probe = .idle }
+        Form {
+            TextField("Name", text: $draft.name, prompt: Text("Claude"))
+            TextField("Status page", text: $draft.url, prompt: Text("status.claude.com"))
+                .onSubmit { Task { await check() } }
+                .onChange(of: draft.url) { _, _ in draft.probe = .idle }
 
-                if case .failed(let message) = draft.probe {
-                    // A sentence long enough to explain itself doesn't belong
-                    // squeezed into a form's right-hand column.
-                    Label {
-                        Text(message).fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                    }
-                    .foregroundStyle(.orange)
-                    .font(.callout)
-                } else {
-                    LabeledContent("Service type") { probeLabel }
+            if case .failed(let message) = draft.probe {
+                // A sentence long enough to explain itself doesn't belong
+                // squeezed into a form's right-hand column.
+                Label {
+                    Text(message).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
                 }
+                .foregroundStyle(.orange)
+                .font(.callout)
+            } else {
+                LabeledContent("Service type") { probeLabel }
             }
-            .formStyle(.grouped)
-
-            Divider()
-
-            HStack {
+        }
+        .formStyle(.grouped)
+        // Placements rather than a hand-built button row under a `Divider`:
+        // in a sheet the system lays these out itself, in the current
+        // release's style, and keeps Remove apart from the pair you confirm
+        // with.
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Spacer()
+            }
+            if let id = draft.existingID {
+                ToolbarItem(placement: .destructiveAction) {
+                    Button("Remove", role: .destructive) {
+                        model.removeSite(id)
+                        dismiss()
+                    }
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
                 if case .found = draft.probe {
                     Button(draft.existingID == nil ? "Add" : "Save") { save() }
                         .keyboardShortcut(.defaultAction)
@@ -357,7 +356,6 @@ struct ServiceEditor: View {
                         .disabled(draft.url.trimmed.isEmpty || draft.probe == .checking)
                 }
             }
-            .padding(14)
         }
         .frame(width: 420)
     }

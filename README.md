@@ -29,7 +29,7 @@ brew install --cask aistat
 
 | Platform | Architectures | Artifact |
 |---|---|---|
-| macOS 14+ | Intel + Apple Silicon (universal) | `.dmg` (native app) |
+| macOS 26+ | Intel + Apple Silicon (universal) | `.dmg` (native app) |
 | Windows | x86_64, arm64 | `.exe` (NSIS); x86_64 also gets `.msi` |
 | Linux | x86_64, aarch64 | `.deb`, `.rpm`; x86_64 also gets `.AppImage` |
 
