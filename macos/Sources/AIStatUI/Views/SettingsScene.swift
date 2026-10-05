@@ -180,8 +180,18 @@ struct ServiceSettings: View {
                                 Button("Edit…") { editing = ServiceDraft(site) }
                                 Button("Remove", role: .destructive) { model.removeSite(site.id) }
                             }
+                            // Not `.onMove`: on macOS that is only wired up
+                            // inside a `List`, and in a grouped `Form` it
+                            // compiles, shows nothing and moves nothing. Each
+                            // row is its own drag source and drop target
+                            // instead, carrying the service id.
+                            .draggable(site.id)
+                            .dropDestination(for: String.self) { ids, _ in
+                                guard let id = ids.first else { return false }
+                                withAnimation { model.moveSite(id, to: site.id) }
+                                return true
+                            }
                         }
-                        .onMove { model.moveSites(from: $0, to: $1) }
                     } footer: {
                         HStack {
                             Text("Drag to reorder. The panel lists services in this order.")

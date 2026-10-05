@@ -184,6 +184,22 @@ struct ServiceEditingTests {
         model.removeSite("claude")
         #expect(model.config.sites.isEmpty)
     }
+
+    /// A dropped row takes the target's slot whichever way it was dragged.
+    @Test func movingTakesTheTargetsSlot() {
+        let model = model()
+        for name in ["A", "B", "C"] {
+            model.upsertSite(
+                existingID: nil, name: name, url: "https://\(name).com", adapter: .statuspage)
+        }
+        model.moveSite("a", to: "c")
+        #expect(model.config.sites.map(\.id) == ["b", "c", "a"])
+        model.moveSite("a", to: "b")
+        #expect(model.config.sites.map(\.id) == ["a", "b", "c"])
+        model.moveSite("b", to: "b")
+        model.moveSite("b", to: "missing")
+        #expect(model.config.sites.map(\.id) == ["a", "b", "c"])
+    }
 }
 
 /// The main menu is never drawn — an accessory app does not own the menu bar —

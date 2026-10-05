@@ -106,8 +106,16 @@ final class AppModel {
         config.sites.removeAll { $0.id == id }
     }
 
-    func moveSites(from source: IndexSet, to destination: Int) {
-        config.sites.move(fromOffsets: source, toOffset: destination)
+    /// Moves one service into the slot another one occupies — what dropping a
+    /// dragged row onto a row means. Dragging down lands it after the target
+    /// and dragging up lands it before, so either way it ends up where the
+    /// pointer was.
+    func moveSite(_ id: String, to targetID: String) {
+        guard id != targetID,
+              let from = config.sites.firstIndex(where: { $0.id == id }),
+              let to = config.sites.firstIndex(where: { $0.id == targetID })
+        else { return }
+        config.sites.move(fromOffsets: [from], toOffset: to > from ? to + 1 : to)
     }
 
     /// Adds a service, or replaces the one being edited.
