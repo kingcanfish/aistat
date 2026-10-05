@@ -53,9 +53,22 @@ fi
 # say "these arguments, if there are any".
 ARCH=(${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"})
 
-echo "==> Building $APP_NAME $VERSION ($CONFIGURATION${UNIVERSAL:+, universal})"
-swift build -c "$CONFIGURATION" ${ARCH[@]+"${ARCH[@]}"} --product "$APP_NAME"
-BIN_PATH="$(swift build -c "$CONFIGURATION" ${ARCH[@]+"${ARCH[@]}"} --product "$APP_NAME" --show-bin-path)"
+# Name the SDK version to the linker ourselves. macOS picks an app's design
+# language from the `sdk` field of LC_BUILD_VERSION, and Swift 6.4 (Xcode 27)
+# links every SwiftPM product — native or Swift Build, one arch or two — with
+# that field set to the deployment target instead: the binary claims the 14.0
+# SDK and gets the pre-Tahoe look, exactly the v0.3.0 failure. The compiler is
+# told 27.0 (`-target-sdk-version`); it is only lost on the way to ld. A later
+# `-platform_version` wins, so this is a no-op on a toolchain without the bug.
+# The minimum must match LSMinimumSystemVersion below and Package.swift, since
+# ld writes it into the same load command.
+MIN_MACOS="14.0"
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+LINK=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
+
+echo "==> Building $APP_NAME $VERSION ($CONFIGURATION${UNIVERSAL:+, universal}, SDK $SDK_VERSION)"
+swift build -c "$CONFIGURATION" ${ARCH[@]+"${ARCH[@]}"} "${LINK[@]}" --product "$APP_NAME"
+BIN_PATH="$(swift build -c "$CONFIGURATION" ${ARCH[@]+"${ARCH[@]}"} "${LINK[@]}" --product "$APP_NAME" --show-bin-path)"
 BINARY="$BIN_PATH/$APP_NAME"
 
 echo "==> Assembling $APP"
@@ -88,7 +101,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>CFBundleVersion</key>
 	<string>$VERSION</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
+	<string>$MIN_MACOS</string>
 	<!-- Menu bar only: no Dock icon, no app switcher entry. -->
 	<key>LSUIElement</key>
 	<true/>
