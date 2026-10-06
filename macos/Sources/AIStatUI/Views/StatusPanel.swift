@@ -32,7 +32,7 @@ struct StatusPanel: View {
     /// ground moves instead, a little. Dark appearance is left as drawn.
     private static let lightShade: Double = 0.08
 
-    /// Clickable size for the header's icon-only button. Comfortably larger
+    /// Clickable size for the panel's icon-only buttons. Comfortably larger
     /// than the glyph inside it, which is the point.
     private static let hitTarget: CGFloat = 24
 
@@ -65,17 +65,14 @@ struct StatusPanel: View {
     // MARK: - header
 
     private var header: some View {
-        HStack(spacing: 9) {
-            StatusBadge(status: model.overall, size: 16)
+        HStack(spacing: 10) {
+            StatusBadge(status: model.overall, size: 24)
             VStack(alignment: .leading, spacing: 1) {
                 Text(PanelHeadline.text(worst: model.overall, statuses: model.statuses))
                     .font(.headline)
                     .lineLimit(1)
-                if let updated = model.statuses.compactMap(\.fetchedAt).max() {
-                    // Relative and self-updating, which a formatted clock time
-                    // never was: "Updated 4 minutes ago" is the thing you
-                    // actually want to know about a cached reading.
-                    Text("Updated \(updated, format: .relative(presentation: .named))")
+                if !model.statuses.isEmpty {
+                    Text(PanelHeadline.tally(model.statuses))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -85,7 +82,8 @@ struct StatusPanel: View {
             refreshButton
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
     private var refreshButton: some View {
@@ -164,12 +162,30 @@ struct StatusPanel: View {
             // scrolling are untouched; the web build dropped its bar the same
             // way, with a zero-width `::-webkit-scrollbar`.
             .scrollIndicators(.never)
-            .scrollEdgeEffectStyle(.soft, for: .vertical)
+            // Soft under the header, hard under the footer. The footer has
+            // bare text in it — the reading's age — and the soft effect only
+            // fades what passes beneath, which left that caption printed over
+            // whatever row was scrolled there. The hard style gives the bar an
+            // edge the content stops at.
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .scrollEdgeEffectStyle(.hard, for: .bottom)
         }
     }
 
     /// Not lazy: a menu bar panel holds a handful of rows, and a `LazyVStack`
     /// only pays off past a screenful.
+    ///
+    /// The rows sit on one inset platter, the grouped-list shape System
+    /// Settings and Control Center use, so the services read as one block
+    /// distinct from the header and footer floating over it. The platter
+    /// declares itself the container shape, which is what lets each row's
+    /// `ConcentricRectangle` come out concentric with it rather than with the
+    /// popover's much larger corners.
+    ///
+    /// Rows keep the order set in settings rather than floating trouble to the
+    /// top: the order is the user's, and a row that jumped every time a page
+    /// changed state would move under the pointer between two clicks. The
+    /// tinted row and the headline already say where to look.
     private var serviceList: some View {
         VStack(spacing: 2) {
             ForEach(model.statuses) { site in
@@ -180,8 +196,26 @@ struct StatusPanel: View {
                 )
             }
         }
-        .padding(.horizontal, 8)
+        .padding(Self.platterInset)
+        .background(platterFill, in: .rect(cornerRadius: Self.platterRadius))
+        .containerShape(.rect(cornerRadius: Self.platterRadius))
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
+    }
+
+    private static let platterRadius: CGFloat = 14
+    private static let platterInset: CGFloat = 4
+
+    /// A lift, not a card. White over the shaded light panel, a faint white
+    /// over the dark one — the semantic fills (`.quinary` and friends) darken
+    /// in light mode, which reads as a hole in the panel rather than a
+    /// surface on it.
+    ///
+    /// Light is kept to a third: at half, the platter came out close to paper
+    /// white against the shaded glass, brighter than anything else in the menu
+    /// bar and enough to make the panel look lit from inside.
+    private var platterFill: Color {
+        colorScheme == .light ? .white.opacity(0.32) : .white.opacity(0.07)
     }
 
     /// Unanimated on purpose. The popover resizes itself from the content's
@@ -206,35 +240,64 @@ struct StatusPanel: View {
     /// project link) the settings window already has, so there was nothing to
     /// preserve.
     ///
-    /// Glass capsules rather than the borderless accessory-bar style: the list
-    /// now scrolls under the footer, and a control floating over moving content
-    /// is what Liquid Glass is for. The container is what lets the two share
-    /// one sampling pass, so they read as a pair of the same material.
+    /// Glass rather than the borderless accessory-bar style: the list scrolls
+    /// under the footer, and a control floating over moving content is what
+    /// Liquid Glass is for. The container is what lets the two share one
+    /// sampling pass, so they read as a pair of the same material.
+    ///
+    /// Icon-only circles, like the header's refresh. As labelled capsules the
+    /// pair took a full-width band for two actions you reach for rarely; the
+    /// freed space carries the reading's age, which moved down here from the
+    /// header to make room for the tally. Both keep their names as tooltips
+    /// and accessibility labels, and their shortcuts.
     private var footer: some View {
-        GlassEffectContainer {
-            HStack(spacing: 0) {
-                Button {
-                    openSettingsWindow()
-                } label: {
-                    Label("Settings…", systemImage: "gearshape")
-                }
-                .panelGlassButtonStyle()
-                .keyboardShortcut(",")
+        HStack(spacing: 8) {
+            if let updated = model.statuses.compactMap(\.fetchedAt).max() {
+                // Relative and self-updating, which a formatted clock time
+                // never was: "Updated 4 minutes ago" is the thing you actually
+                // want to know about a cached reading.
+                Text("Updated \(updated, format: .relative(presentation: .named))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, 4)
+            }
+            Spacer(minLength: 0)
+            GlassEffectContainer {
+                HStack(spacing: 8) {
+                    Button {
+                        openSettingsWindow()
+                    } label: {
+                        iconLabel("Settings…", systemImage: "gearshape")
+                    }
+                    .panelGlassButtonStyle()
+                    .buttonBorderShape(.circle)
+                    .keyboardShortcut(",")
+                    .help("Settings…")
 
-                Spacer(minLength: 0)
-
-                Button {
-                    NSApplication.shared.terminate(nil)
-                } label: {
-                    Label("Quit", systemImage: "power")
+                    Button {
+                        NSApplication.shared.terminate(nil)
+                    } label: {
+                        iconLabel("Quit AIStat", systemImage: "power")
+                    }
+                    .panelGlassButtonStyle()
+                    .buttonBorderShape(.circle)
+                    .keyboardShortcut("q")
+                    .help("Quit AIStat")
                 }
-                .panelGlassButtonStyle()
-                .keyboardShortcut("q")
-                .help("Quit AIStat")
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// A `Label` shown icon-only, so VoiceOver still reads its title, sized
+    /// like the refresh button for the reason given at ``hitTarget``.
+    private func iconLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .labelStyle(.iconOnly)
+            .frame(width: Self.hitTarget, height: Self.hitTarget)
+            .contentShape(.rect)
     }
 }
 

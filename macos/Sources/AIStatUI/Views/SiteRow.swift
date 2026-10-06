@@ -34,41 +34,60 @@ struct SiteRow: View {
                     .padding(.bottom, 11)
             }
         }
-        .background(
-            .quinary.opacity(isExpanded ? 1 : (hovering ? 0.8 : 0)),
-            in: Self.shape
-        )
+        .background(rowFill, in: Self.shape)
         .onHover { hovering = $0 }
     }
 
+    /// A collapsed row in trouble keeps a faint wash of its status colour, so
+    /// it stands out of a list of quiet rows without being moved to the top.
+    ///
+    /// Collapsed only. Open, the row is a tall block full of status-coloured
+    /// text — component readings, the incident rails — and those are the same
+    /// hue as the wash: system yellow on a yellow ground was close to
+    /// invisible. An open row takes the neutral grey every other row does, the
+    /// ground that text was tuned against.
+    private var rowFill: AnyShapeStyle {
+        if site.overall.isNoteworthy && !isExpanded {
+            return AnyShapeStyle(site.overall.tint.opacity(hovering ? 0.16 : 0.1))
+        }
+        return AnyShapeStyle(.quinary.opacity(isExpanded ? 1 : (hovering ? 0.8 : 0)))
+    }
+
+    /// A quiet row carries a small status symbol on the right; a row in trouble
+    /// carries its state as a solid pill there instead, with what it amounts to
+    /// on a second line. Five rows all saying "Operational" was the panel
+    /// shouting the one thing that needs no saying, and pushed the one that did
+    /// into the same column as the rest.
+    ///
+    /// The symbol, not a plain dot: shape carries the state here, not hue alone
+    /// (see `Status.symbolName`). The pill is solid for legibility: system
+    /// yellow as text does not read on a light panel at any wash, but dark
+    /// text on a yellow fill does, in either appearance — and a filled shape
+    /// is the one mark in the list loud enough to find at a glance.
     private var summary: some View {
         Button(action: toggle) {
-            HStack(spacing: 8) {
-                StatusBadge(status: site.overall)
+            HStack(spacing: 10) {
                 SiteIcon(site: site)
-                Text(site.name)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(site.name)
+                        .fontWeight(site.overall.isNoteworthy ? .semibold : .regular)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let subtitle {
+                        subtitle
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
                 Spacer(minLength: 4)
 
-                if attentionCount > 0 {
-                    Text(attentionCount, format: .number)
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(site.overall.tint)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(site.overall.tint.opacity(0.18), in: .capsule)
-                        .help(attentionHelp)
+                if site.overall.isNoteworthy {
+                    StatusPill(status: site.overall)
+                } else {
+                    StatusBadge(status: site.overall, size: 12)
                 }
-
-                Text(site.overall.shortLabel)
-                    .font(.callout)
-                    .foregroundStyle(site.overall.foreground)
-                    .lineLimit(1)
-                    // The reading wins the space: a long service name truncates
-                    // before "Partial outage" is allowed to.
-                    .layoutPriority(1)
 
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
@@ -76,7 +95,7 @@ struct SiteRow: View {
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 7)
+            .padding(.vertical, subtitle == nil ? 7 : 6)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -84,10 +103,24 @@ struct SiteRow: View {
         .accessibilityHint(isExpanded ? "Collapse details" : "Expand details")
     }
 
-    private var attentionHelp: String {
-        site.incidents.isEmpty
-            ? "^[\(site.impairedComponents.count) component](inflect: true) affected"
-            : "^[\(site.incidents.count) open incident](inflect: true)"
+    /// The second line, for a row that has something to say: how much is wrong
+    /// — the state itself is in the pill — or why it couldn't be read. `nil`
+    /// for a quiet row, and for one in trouble with nothing to count.
+    ///
+    /// Folds in what used to be a separate count badge, which said "2" and
+    /// left the hover tooltip to say two of what.
+    ///
+    /// A `Text` rather than a `String`: the plural is inflection markup, and
+    /// only a `LocalizedStringKey` — what a `Text` literal is — renders it.
+    /// `String(localized:)` hands back the markup verbatim.
+    private var subtitle: Text? {
+        if site.overall.isNoteworthy {
+            guard attentionCount > 0 else { return nil }
+            return site.incidents.isEmpty
+                ? Text("^[\(attentionCount) component](inflect: true) affected")
+                : Text("^[\(attentionCount) open incident](inflect: true)")
+        }
+        return site.error == nil ? nil : Text("Can't reach status page")
     }
 
     @ViewBuilder
@@ -255,15 +288,20 @@ struct SiteIcon: View {
                 placeholder
             }
         }
-        .frame(width: 15, height: 15)
-        .clipShape(.rect(cornerRadius: 3.5, style: .continuous))
+        .frame(width: Self.size, height: Self.size)
+        .clipShape(.rect(cornerRadius: Self.radius, style: .continuous))
     }
+
+    /// Larger than it was, now that the status symbol has left the front of the
+    /// row: the icon is what the eye finds a service by.
+    private static let size: CGFloat = 20
+    private static let radius: CGFloat = 5
 
     private var placeholder: some View {
         Text(monogram)
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.secondary)
-            .frame(width: 15, height: 15)
-            .background(.quaternary, in: .rect(cornerRadius: 3.5, style: .continuous))
+            .frame(width: Self.size, height: Self.size)
+            .background(.quaternary, in: .rect(cornerRadius: Self.radius, style: .continuous))
     }
 }

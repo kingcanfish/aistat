@@ -54,6 +54,15 @@ struct PanelHeadlineTests {
         let statuses = [site("claude", .unknown), site("openai", .unknown)]
         #expect(PanelHeadline.text(worst: .unknown, statuses: statuses) == "Status unavailable")
     }
+
+    /// An unreadable page is not counted as fine.
+    @Test func tallyCountsOnlyOperational() {
+        let statuses = [
+            site("claude", .operational), site("openai", .degraded),
+            site("deepseek", .operational), site("gemini", .unknown),
+        ]
+        #expect(PanelHeadline.tally(statuses) == "2 of 4 operational")
+    }
 }
 
 @Suite("Menu bar icon")

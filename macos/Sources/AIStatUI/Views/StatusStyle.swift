@@ -45,6 +45,33 @@ extension Status {
     }
 
     var foreground: Color { isNoteworthy ? tint : .secondary }
+
+    /// Text drawn *on* a fill of ``tint``. Yellow and orange are light hues in
+    /// both appearances and need dark ink; red and blue are dark enough for
+    /// white. Fixed rather than `.primary`, which would flip to white on the
+    /// yellow pill in dark mode and vanish.
+    var onTint: Color {
+        switch self {
+        case .degraded, .partialOutage: .black.opacity(0.85)
+        default: .white
+        }
+    }
+}
+
+/// A row's state as a solid capsule, for states worth reading.
+struct StatusPill: View {
+    var status: Status
+
+    var body: some View {
+        Text(status.shortLabel)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(status.onTint)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(status.tint, in: .capsule)
+    }
 }
 
 /// The one-glance state marker used in rows and headers.

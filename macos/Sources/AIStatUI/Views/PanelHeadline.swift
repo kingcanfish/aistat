@@ -35,4 +35,15 @@ enum PanelHeadline {
                 : "\(worst.shortLabel) at \(named.name)"
         }
     }
+
+    /// The header's second line: how much of the list is fine, so the headline
+    /// can name one service without hiding how many others there are.
+    ///
+    /// Counts `operational` only. A page we couldn't read is not known to be
+    /// fine, and saying "5 of 5" over a row that failed to load would be the
+    /// one reassuring number in the panel that isn't true.
+    static func tally(_ statuses: [SiteStatus]) -> String {
+        let fine = statuses.filter { $0.overall == .operational }.count
+        return "\(fine) of \(statuses.count) operational"
+    }
 }
