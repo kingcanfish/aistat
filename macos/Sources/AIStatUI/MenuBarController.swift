@@ -45,6 +45,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = false
         popover.delegate = self
+        // Lets the panel's shade reach under the arrow; the content itself
+        // still lays out inside the safe area. See `StatusPanel.lightShade`.
+        popover.hasFullSizeContent = true
 
         let hosting = NSHostingController(rootView: StatusPanel(model: model))
         // Without this the popover keeps whatever size it was first shown at:

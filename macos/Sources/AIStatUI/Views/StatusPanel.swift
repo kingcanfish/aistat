@@ -11,6 +11,7 @@ import SwiftUI
 struct StatusPanel: View {
     @Bindable var model: AppModel
     @State private var expanded: Set<String>
+    @Environment(\.colorScheme) private var colorScheme
 
     init(model: AppModel, initiallyExpanded: Set<String> = []) {
         self.model = model
@@ -22,6 +23,14 @@ struct StatusPanel: View {
     /// the list's old 420-point cap plus the header and footer, which now sit
     /// over the scroll view instead of beside it.
     private static let maxPanelHeight: CGFloat = 520
+
+    /// How much black is laid over the popover's own material in the light
+    /// appearance. Left alone it comes out a pale, washed grey, on which the
+    /// status hues — system yellow above all — barely read as text: the same
+    /// yellow is plain on an incident card's darker ground. Brightening the
+    /// panel made that worse, and darkening the hues turned them muddy, so the
+    /// ground moves instead, a little. Dark appearance is left as drawn.
+    private static let lightShade: Double = 0.08
 
     /// Clickable size for the header's icon-only button. Comfortably larger
     /// than the glyph inside it, which is the point.
@@ -38,6 +47,14 @@ struct StatusPanel: View {
             .safeAreaBar(edge: .bottom, spacing: 0) { footer }
             .frame(width: 320)
             .frame(maxHeight: Self.maxPanelHeight)
+            // Ignores the safe area so it also covers the arrow, which the
+            // popover lets content reach (`hasFullSizeContent`); stopping at
+            // the content edge left the arrow a different shade from the panel.
+            .background {
+                if colorScheme == .light {
+                    Color.black.opacity(Self.lightShade).ignoresSafeArea()
+                }
+            }
         .onChange(of: model.config.sites.map(\.id)) { _, live in
             // A service removed in settings shouldn't leave its row expanded
             // when it comes back.
@@ -94,7 +111,7 @@ struct StatusPanel: View {
         // too, so this is the same kind of control floating over the same
         // moving content. Circular because it is icon-only, which is the shape
         // Liquid Glass gives a lone symbol button.
-        .buttonStyle(.glass)
+        .panelGlassButtonStyle()
         .buttonBorderShape(.circle)
         .disabled(model.isRefreshing)
         .help("Refresh now")
@@ -201,7 +218,7 @@ struct StatusPanel: View {
                 } label: {
                     Label("Settings…", systemImage: "gearshape")
                 }
-                .buttonStyle(.glass)
+                .panelGlassButtonStyle()
                 .keyboardShortcut(",")
 
                 Spacer(minLength: 0)
@@ -211,12 +228,32 @@ struct StatusPanel: View {
                 } label: {
                     Label("Quit", systemImage: "power")
                 }
-                .buttonStyle(.glass)
+                .panelGlassButtonStyle()
                 .keyboardShortcut("q")
                 .help("Quit AIStat")
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+    }
+}
+
+private extension View {
+    /// Clear glass rather than the regular variant `.glass` gives. The panel
+    /// is itself a pale translucent sheet, and regular glass brightens what it
+    /// samples, so on a light menu bar the three buttons came out as near-white
+    /// slabs sitting well above the panel's own grey. Clear glass keeps the
+    /// lensing and the edge highlight without the frosting, and so sits at the
+    /// panel's tone instead of above it.
+    ///
+    /// `GlassButtonStyle(_:)` arrived in 26.1; on 26.0 there is only the
+    /// regular one.
+    @ViewBuilder
+    func panelGlassButtonStyle() -> some View {
+        if #available(macOS 26.1, *) {
+            buttonStyle(.glass(.clear))
+        } else {
+            buttonStyle(.glass)
+        }
     }
 }
