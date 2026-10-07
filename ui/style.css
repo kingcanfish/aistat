@@ -643,6 +643,29 @@ body:not([data-agg="operational"]):not([data-agg="unknown"]) #agg-dot {
   text-overflow: ellipsis;
 }
 
+/* Hover pans a clipped name to its end and back (see startMarquee in app.js).
+   Clip instead of ellipsizing while it moves, or the ellipsis rides along. */
+.component-name.is-scrolling {
+  text-overflow: clip;
+}
+.component-name.is-scrolling .component-name__text {
+  display: inline-block;
+  animation: marquee var(--marquee-duration, 4s) ease-in-out infinite;
+}
+@keyframes marquee {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  50%,
+  75% {
+    transform: translateX(var(--marquee-distance, 0));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
 /* Carded, with the impact colour as a rail down its edge. The rail replaced a
    small coloured dot in the heading: same information, but it sizes itself to
    the card, so a long incident is marked for its whole height. */

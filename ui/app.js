@@ -42,6 +42,20 @@ function dot(status, small = false) {
   return el;
 }
 
+/** Pixels per second; matches the macOS build's MarqueeText. */
+const MARQUEE_SPEED = 40;
+
+function startMarquee(box, text) {
+  const distance = text.scrollWidth - box.clientWidth;
+  if (distance <= 0 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  // The outward pan is 35% of the keyframe cycle (15%→50%); size the cycle so
+  // that pan runs at MARQUEE_SPEED.
+  const cycle = Math.max(2.5, distance / (0.35 * MARQUEE_SPEED));
+  box.style.setProperty("--marquee-distance", `-${distance}px`);
+  box.style.setProperty("--marquee-duration", `${cycle}s`);
+  box.classList.add("is-scrolling");
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -137,9 +151,15 @@ function siteDetail(site) {
     for (const c of sorted) {
       const row = el("div", "component-row");
       row.appendChild(dot(c.status, true));
-      const name = el("span", "component-name", c.name);
+      const name = el("span", "component-name");
       name.title = c.name; // long names ellipsize at this width
+      const text = el("span", "component-name__text", c.name);
+      name.appendChild(text);
       row.appendChild(name);
+      // Hovering a clipped name pans it to its end and back, so the part the
+      // ellipsis hid can be read without waiting for the tooltip.
+      row.addEventListener("mouseenter", () => startMarquee(name, text));
+      row.addEventListener("mouseleave", () => name.classList.remove("is-scrolling"));
       row.appendChild(readout(`site-status site-status--${c.status}`, label(c.status)));
       inner.appendChild(row);
     }

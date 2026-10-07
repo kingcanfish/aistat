@@ -162,24 +162,7 @@ struct SiteRow: View {
                             < $1.status.severity(in: Status.defaultPriority)
                     }
                 ) { component in
-                    HStack(spacing: 5) {
-                        Image(systemName: component.status.symbolName)
-                            .font(.system(size: 10))
-                            .foregroundStyle(component.status.tint)
-                        Text(component.name)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            // Provider component names run long and the panel
-                            // is 320 points wide; hovering is how you read the
-                            // rest of one.
-                            .help(component.name)
-                        Spacer(minLength: 8)
-                        Text(component.status.shortLabel)
-                            .foregroundStyle(component.status.foreground)
-                            .layoutPriority(1)
-                    }
-                    .font(.callout)
-                    .accessibilityElement(children: .combine)
+                    ComponentRow(component: component)
                 }
             }
 
@@ -189,6 +172,37 @@ struct SiteRow: View {
             .font(.callout)
             .padding(.top, 2)
         }
+    }
+}
+
+/// One component line. Its own view so each line can track its own hover.
+@MainActor
+private struct ComponentRow: View {
+    var component: Component
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: component.status.symbolName)
+                .font(.system(size: 10))
+                .foregroundStyle(component.status.tint)
+            // Provider component names run long and the panel is 320 points
+            // wide, so a long one is clipped next to its status label —
+            // "Codex in Ch…PT Desktop" beside "Partial outage", unreadable
+            // exactly when it matters. Hovering the line scrolls the rest into
+            // view; the tooltip stays for Reduce Motion, where it cannot.
+            MarqueeText(text: component.name, scrolling: hovering)
+                .help(component.name)
+            Spacer(minLength: 8)
+            Text(component.status.shortLabel)
+                .foregroundStyle(component.status.foreground)
+                .layoutPriority(1)
+        }
+        .font(.callout)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
     }
 }
 
